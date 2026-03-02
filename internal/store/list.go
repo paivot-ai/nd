@@ -60,13 +60,13 @@ func (s *Store) ListIssues(opts FilterOptions) ([]*model.Issue, error) {
 		if r.err != nil {
 			continue // skip unreadable issues
 		}
-		if s.matchesFilter(r.issue, opts) {
+		if s.MatchesFilter(r.issue, opts) {
 			issues = issues[:len(issues):len(issues)]
 			issues = append(issues, r.issue)
 		}
 	}
 
-	sortIssues(issues, opts.Sort, opts.Reverse)
+	SortIssues(issues, opts.Sort, opts.Reverse)
 
 	if opts.Limit > 0 && len(issues) > opts.Limit {
 		issues = issues[:opts.Limit]
@@ -74,7 +74,8 @@ func (s *Store) ListIssues(opts FilterOptions) ([]*model.Issue, error) {
 	return issues, nil
 }
 
-func (s *Store) matchesFilter(issue *model.Issue, opts FilterOptions) bool {
+// MatchesFilter reports whether an issue matches the given filter options.
+func (s *Store) MatchesFilter(issue *model.Issue, opts FilterOptions) bool {
 	if opts.Status != "" {
 		switch opts.Status {
 		case "all":
@@ -147,7 +148,9 @@ func (s *Store) matchesFilter(issue *model.Issue, opts FilterOptions) bool {
 	return true
 }
 
-func sortIssues(issues []*model.Issue, sortBy string, reverse bool) {
+// SortIssues sorts issues by the given field. Supported values: priority,
+// created, updated, id (default). If reverse is true, the order is inverted.
+func SortIssues(issues []*model.Issue, sortBy string, reverse bool) {
 	less := func(a, b *model.Issue) bool { return a.ID < b.ID }
 	switch sortBy {
 	case "priority":

@@ -753,6 +753,163 @@ func containsStr(ss []string, s string) bool {
 	return false
 }
 
+// TestReadyFiltering verifies that the ready set can be filtered with the same
+// FilterOptions used by nd list (parent, label, priority, assignee, type).
+// This is an integration test: real vault files, no mocks.
+func TestReadyFiltering(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Init(dir, "RDY", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create an epic with two children and a standalone task.
+	epic, _ := s.CreateIssue("Auth Epic", "Auth work", "epic", 1, "", nil, "")
+	child1, _ := s.CreateIssue("Design auth", "Design", "task", 1, "alice", []string{"auth"}, epic.ID)
+	child2, _ := s.CreateIssue("Implement auth", "Build", "feature", 2, "bob", []string{"auth", "backend"}, epic.ID)
+	standalone, _ := s.CreateIssue("Fix CSS bug", "Broken layout", "bug", 0, "alice", []string{"frontend"}, "")
+
+	// child2 depends on child1 --> child2 is blocked.
+	if err := s.AddDependency(child2.ID, child1.ID); err != nil {
+		t.Fatalf("add dep: %v", err)
+	}
+
+	// Build the full ready set (for reference).
+	all, _ := s.ListIssues(store.FilterOptions{})
+	g := graph.Build(all)
+	readyAll := g.Ready()
+	readyAllIDs := idsOf(readyAll)
+
+	// child2 should be blocked, everything else ready (epic, child1, standalone).
+	if containsStr(readyAllIDs, child2.ID) {
+		t.Errorf("child2 should not be ready (blocked): %v", readyAllIDs)
+	}
+	if !containsStr(readyAllIDs, child1.ID) || !containsStr(readyAllIDs, standalone.ID) {
+		t.Errorf("child1 and standalone should be ready: %v", readyAllIDs)
+	}
+
+	// --- Filter by parent (epic-scoped) ---
+	epicReady := filterReadyWithOpts(t, s, store.FilterOptions{Parent: epic.ID})
+	epicReadyIDs := idsOf(epicReady)
+	if !containsStr(epicReadyIDs, child1.ID) {
+		t.Errorf("--parent: child1 should be in epic-scoped ready: %v", epicReadyIDs)
+	}
+	if containsStr(epicReadyIDs, standalone.ID) {
+		t.Errorf("--parent: standalone should NOT be in epic-scoped ready: %v", epicReadyIDs)
+	}
+	if containsStr(epicReadyIDs, child2.ID) {
+		t.Errorf("--parent: child2 should still be blocked: %v", epicReadyIDs)
+	}
+	// Epic itself should not show (it has a different parent -- no parent).
+	if containsStr(epicReadyIDs, epic.ID) {
+		t.Errorf("--parent: epic itself should not match parent filter: %v", epicReadyIDs)
+	}
+
+	// --- Filter by assignee ---
+	aliceReady := filterReadyWithOpts(t, s, store.FilterOptions{Assignee: "alice"})
+	aliceIDs := idsOf(aliceReady)
+	if !containsStr(aliceIDs, child1.ID) || !containsStr(aliceIDs, standalone.ID) {
+		t.Errorf("--assignee=alice: should include child1 and standalone: %v", aliceIDs)
+	}
+	if containsStr(aliceIDs, child2.ID) {
+		t.Errorf("--assignee=alice: child2 is bob's and blocked: %v", aliceIDs)
+	}
+
+	// --- Filter by label ---
+	authReady := filterReadyWithOpts(t, s, store.FilterOptions{Label: "auth"})
+	authIDs := idsOf(authReady)
+	if !containsStr(authIDs, child1.ID) {
+		t.Errorf("--label=auth: child1 should match: %v", authIDs)
+	}
+	if containsStr(authIDs, standalone.ID) {
+		t.Errorf("--label=auth: standalone has no auth label: %v", authIDs)
+	}
+
+	frontendReady := filterReadyWithOpts(t, s, store.FilterOptions{Label: "frontend"})
+	frontendIDs := idsOf(frontendReady)
+	if !containsStr(frontendIDs, standalone.ID) {
+		t.Errorf("--label=frontend: standalone should match: %v", frontendIDs)
+	}
+	if len(frontendIDs) != 1 {
+		t.Errorf("--label=frontend: expected exactly 1 result, got %d: %v", len(frontendIDs), frontendIDs)
+	}
+
+	// --- Filter by priority ---
+	p0Ready := filterReadyWithOpts(t, s, store.FilterOptions{Priority: "0"})
+	p0IDs := idsOf(p0Ready)
+	if !containsStr(p0IDs, standalone.ID) {
+		t.Errorf("--priority=0: standalone (P0) should match: %v", p0IDs)
+	}
+	if containsStr(p0IDs, child1.ID) {
+		t.Errorf("--priority=0: child1 (P1) should not match: %v", p0IDs)
+	}
+
+	// --- Filter by type ---
+	bugReady := filterReadyWithOpts(t, s, store.FilterOptions{Type: "bug"})
+	bugIDs := idsOf(bugReady)
+	if !containsStr(bugIDs, standalone.ID) {
+		t.Errorf("--type=bug: standalone should match: %v", bugIDs)
+	}
+	if len(bugIDs) != 1 {
+		t.Errorf("--type=bug: expected exactly 1 result, got %d: %v", len(bugIDs), bugIDs)
+	}
+
+	// --- Filter by no-parent ---
+	noParentReady := filterReadyWithOpts(t, s, store.FilterOptions{NoParent: true})
+	noParentIDs := idsOf(noParentReady)
+	if !containsStr(noParentIDs, standalone.ID) {
+		t.Errorf("--no-parent: standalone should match: %v", noParentIDs)
+	}
+	if !containsStr(noParentIDs, epic.ID) {
+		t.Errorf("--no-parent: epic has no parent, should match: %v", noParentIDs)
+	}
+	if containsStr(noParentIDs, child1.ID) || containsStr(noParentIDs, child2.ID) {
+		t.Errorf("--no-parent: children have a parent, should not match: %v", noParentIDs)
+	}
+
+	// --- Combined filters (parent + label) ---
+	epicBackendReady := filterReadyWithOpts(t, s, store.FilterOptions{Parent: epic.ID, Label: "backend"})
+	epicBackendIDs := idsOf(epicBackendReady)
+	// child2 has "backend" label but is blocked, so nothing should match.
+	if len(epicBackendIDs) != 0 {
+		t.Errorf("--parent + --label=backend: child2 is blocked, expected 0 results, got %d: %v",
+			len(epicBackendIDs), epicBackendIDs)
+	}
+
+	// Unblock child2, then check again.
+	if err := s.CloseIssue(child1.ID, "done"); err != nil {
+		t.Fatalf("close child1: %v", err)
+	}
+	epicBackendReady2 := filterReadyWithOpts(t, s, store.FilterOptions{Parent: epic.ID, Label: "backend"})
+	epicBackendIDs2 := idsOf(epicBackendReady2)
+	if !containsStr(epicBackendIDs2, child2.ID) {
+		t.Errorf("after unblocking: child2 should now be ready with --parent + --label=backend: %v", epicBackendIDs2)
+	}
+	if len(epicBackendIDs2) != 1 {
+		t.Errorf("expected exactly 1 result after unblocking, got %d: %v", len(epicBackendIDs2), epicBackendIDs2)
+	}
+}
+
+// filterReadyWithOpts simulates the nd ready command logic: load all issues,
+// compute graph readiness, then apply FilterOptions to the ready set.
+func filterReadyWithOpts(t *testing.T, s *store.Store, opts store.FilterOptions) []*model.Issue {
+	t.Helper()
+	all, err := s.ListIssues(store.FilterOptions{})
+	if err != nil {
+		t.Fatalf("ListIssues: %v", err)
+	}
+	g := graph.Build(all)
+	ready := g.Ready()
+
+	var filtered []*model.Issue
+	for _, issue := range ready {
+		if s.MatchesFilter(issue, opts) {
+			filtered = append(filtered, issue)
+		}
+	}
+	return filtered
+}
+
 func idsOf(issues []*model.Issue) []string {
 	ids := make([]string, len(issues))
 	for i, issue := range issues {

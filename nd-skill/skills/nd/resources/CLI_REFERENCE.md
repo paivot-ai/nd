@@ -202,10 +202,16 @@ nd list --status=review                           # Filter by custom status
 
 ```bash
 # Ready work (no blockers, not closed/deferred)
+# nd ready supports ALL the same filter flags as nd list.
 nd ready                                          # All ready issues
+nd ready --parent=PROJ-a1b2                       # Ready issues in a specific epic
 nd ready --assignee=alice                         # Filter by assignee
-nd ready --sort=priority                          # Sort: priority, created, updated, id
-nd ready -n 5                                     # Top 5
+nd ready --label=auth                             # Filter by label
+nd ready --priority=0                             # Filter by priority
+nd ready --type=bug                               # Filter by type
+nd ready --no-parent                              # Only parentless issues
+nd ready --sort=created --reverse -n 5            # 5 most recently created
+nd ready --created-after=2026-01-01               # Created this year
 
 # Blocked work
 nd blocked                                        # Show blocked issues

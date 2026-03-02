@@ -454,12 +454,25 @@ Dependencies are bidirectional: `nd dep add A B` adds B to A's `blocked_by` AND 
 ### Finding Work
 
 ```bash
-nd ready [--assignee=NAME] [--sort=priority] [-n LIMIT]
+nd ready [flags]
 nd blocked [--verbose]
 nd stale [--days=N]
 ```
 
-`ready` shows issues with no open blockers. `blocked` shows issues waiting on dependencies. `stale` shows issues not updated in N days (default: 14).
+`ready` shows issues with no open blockers. It supports the same filter flags as `nd list` for scoping results:
+
+```bash
+nd ready                                    # All ready issues
+nd ready --parent=PROJ-a1b2                 # Ready issues in a specific epic
+nd ready --label=auth --assignee=alice      # Ready auth issues assigned to alice
+nd ready --priority=0                       # Ready critical issues
+nd ready --type=bug                         # Ready bugs
+nd ready --no-parent                        # Ready issues without a parent
+nd ready --created-after=2026-01-01         # Ready issues created this year
+nd ready --sort=created --reverse -n 5      # 5 most recently created ready issues
+```
+
+`blocked` shows issues waiting on dependencies. `stale` shows issues not updated in N days (default: 14).
 
 ### Search
 

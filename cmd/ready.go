@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"strings"
 
 	"github.com/RamXX/nd/internal/format"
 	"github.com/RamXX/nd/internal/graph"
@@ -14,10 +13,26 @@ import (
 var readyCmd = &cobra.Command{
 	Use:   "ready",
 	Short: "Show actionable issues (no blockers)",
+	Long: `Show issues that are actionable: not closed, not deferred, and no open blockers.
+
+Supports the same filter flags as 'nd list' for scoping results
+(e.g., --parent to scope to an epic, --label, --priority, etc.).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		assignee, _ := cmd.Flags().GetString("assignee")
-		sortBy, _ := cmd.Flags().GetString("sort")
-		limit, _ := cmd.Flags().GetInt("limit")
+		// Always filter out closed issues -- Ready() handles closed/deferred
+		// exclusion, but pre-filtering avoids loading unnecessary data.
+		opts, err := buildFilterOptions(cmd, "!closed")
+		if err != nil {
+			return err
+		}
+
+		// Save sort/reverse/limit, then zero them -- we need to sort and
+		// limit AFTER graph filtering, not before.
+		sortBy := opts.Sort
+		reverse := opts.Reverse
+		limit := opts.Limit
+		opts.Sort = ""
+		opts.Reverse = false
+		opts.Limit = 0
 
 		s, err := store.Open(resolveVaultDir())
 		if err != nil {
@@ -25,6 +40,8 @@ var readyCmd = &cobra.Command{
 		}
 		defer s.Close()
 
+		// Load all issues in the vault (unfiltered) for accurate graph
+		// computation -- blockers may live outside the filtered set.
 		all, err := s.ListIssues(store.FilterOptions{})
 		if err != nil {
 			return err
@@ -33,18 +50,10 @@ var readyCmd = &cobra.Command{
 		g := graph.Build(all)
 		ready := g.Ready()
 
-		// Filter by assignee if specified.
-		if assignee != "" {
-			var tmp []*model.Issue
-			for _, r := range ready {
-				if strings.EqualFold(r.Assignee, assignee) {
-					tmp = append(tmp, r)
-				}
-			}
-			ready = tmp
-		}
+		// Now apply the user's filters to the ready set.
+		ready = filterIssues(s, ready, opts)
 
-		sortReady(ready, sortBy)
+		store.SortIssues(ready, sortBy, reverse)
 
 		if limit > 0 && len(ready) > limit {
 			ready = ready[:limit]
@@ -58,29 +67,19 @@ var readyCmd = &cobra.Command{
 	},
 }
 
-func sortReady(issues []*model.Issue, sortBy string) {
-	less := func(a, b *model.Issue) bool {
-		switch sortBy {
-		case "created":
-			return a.CreatedAt.Before(b.CreatedAt)
-		case "updated":
-			return a.UpdatedAt.After(b.UpdatedAt)
-		case "id":
-			return a.ID < b.ID
-		default: // priority
-			return a.Priority < b.Priority
+// filterIssues applies FilterOptions to an already-computed slice of issues.
+// This is used by ready to apply user filters after graph-based filtering.
+func filterIssues(s *store.Store, issues []*model.Issue, opts store.FilterOptions) []*model.Issue {
+	var result []*model.Issue
+	for _, issue := range issues {
+		if s.MatchesFilter(issue, opts) {
+			result = append(result, issue)
 		}
 	}
-	for i := 1; i < len(issues); i++ {
-		for j := i; j > 0 && less(issues[j], issues[j-1]); j-- {
-			issues[j], issues[j-1] = issues[j-1], issues[j]
-		}
-	}
+	return result
 }
 
 func init() {
-	readyCmd.Flags().String("assignee", "", "filter by assignee")
-	readyCmd.Flags().String("sort", "priority", "sort by: priority, created, updated, id")
-	readyCmd.Flags().IntP("limit", "n", 0, "max results")
+	addFilterFlags(readyCmd)
 	rootCmd.AddCommand(readyCmd)
 }
