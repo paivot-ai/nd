@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,75 @@ import (
 	"github.com/RamXX/vlt"
 	"gopkg.in/yaml.v3"
 )
+
+// gitignoreEntries are the lines that must appear in the vault's .gitignore.
+// Blank lines and comments are included for readability.
+var gitignoreEntries = []string{
+	"# nd runtime state -- do not track",
+	"# Issues are the system of record; use `nd archive` for git-committable snapshots",
+	".nd.yaml",
+	".vlt.lock",
+	".trash/",
+	"issues/",
+	".guard/",
+	".piv-loop-state.json",
+	".piv-loop-snapshot.json",
+	".dispatcher-state.json",
+}
+
+// EnsureGitignore idempotently adds any missing entries to the vault's .gitignore.
+// It creates the file if it does not exist. Safe to call on every Open.
+func (s *Store) EnsureGitignore() error {
+	return ensureGitignore(s.dir)
+}
+
+func ensureGitignore(dir string) error {
+	path := filepath.Join(dir, ".gitignore")
+
+	existing := make(map[string]bool)
+	f, err := os.Open(path)
+	if err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			existing[scanner.Text()] = true
+		}
+		f.Close()
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("scan .gitignore: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("open .gitignore: %w", err)
+	}
+
+	var missing []string
+	for _, entry := range gitignoreEntries {
+		if !existing[entry] {
+			missing = append(missing, entry)
+		}
+	}
+	if len(missing) == 0 {
+		return nil // nothing to do
+	}
+
+	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open .gitignore for append: %w", err)
+	}
+	defer out.Close()
+
+	// Add a newline separator if the file already had content.
+	if len(existing) > 0 {
+		if _, err := out.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	for _, entry := range missing {
+		if _, err := out.WriteString(entry + "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Config holds vault-level nd configuration stored in .nd.yaml.
 type Config struct {
@@ -51,6 +121,8 @@ func Open(dir string) (*Store, error) {
 		unlock()
 		return nil, fmt.Errorf("load config: %w", err)
 	}
+	// Ensure existing vaults have a complete .gitignore.
+	_ = s.EnsureGitignore()
 	return s, nil
 }
 
@@ -69,6 +141,11 @@ func Init(dir, prefix, author string) (*Store, error) {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", sub, err)
 		}
+	}
+
+	// Write .gitignore (idempotent -- appends to any existing file).
+	if err := ensureGitignore(dir); err != nil {
+		return nil, fmt.Errorf("write .gitignore: %w", err)
 	}
 
 	// Write config.

@@ -2,11 +2,117 @@ package store
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/RamXX/nd/internal/model"
 )
+
+func TestInit_CreatesGitignore(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf(".gitignore missing: %v", err)
+	}
+
+	content := string(data)
+	for _, entry := range gitignoreEntries {
+		if !strings.Contains(content, entry) {
+			t.Errorf(".gitignore missing entry %q", entry)
+		}
+	}
+}
+
+func TestEnsureGitignore_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Read original content.
+	original, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+
+	// Call EnsureGitignore again.
+	if err := s.EnsureGitignore(); err != nil {
+		t.Fatalf("EnsureGitignore: %v", err)
+	}
+
+	after, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore after: %v", err)
+	}
+
+	if string(original) != string(after) {
+		t.Errorf("EnsureGitignore should be idempotent.\nBefore:\n%s\nAfter:\n%s", original, after)
+	}
+}
+
+func TestEnsureGitignore_AppendsToExisting(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a partial .gitignore with only some entries.
+	partial := "# custom user entry\n*.log\n.nd.yaml\n"
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte(partial), 0o644); err != nil {
+		t.Fatalf("write partial .gitignore: %v", err)
+	}
+
+	// Create minimal vault structure so we can make a Store.
+	for _, sub := range []string{"issues", ".trash"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", sub, err)
+		}
+	}
+
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// EnsureGitignore should add missing entries.
+	if err := s.EnsureGitignore(); err != nil {
+		t.Fatalf("EnsureGitignore: %v", err)
+	}
+
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+
+	content := string(data)
+	// Original entries must still be there.
+	if !strings.Contains(content, "# custom user entry") {
+		t.Error("original custom entry should be preserved")
+	}
+	if !strings.Contains(content, "*.log") {
+		t.Error("original *.log entry should be preserved")
+	}
+
+	// All required entries must be present.
+	for _, entry := range gitignoreEntries {
+		if !strings.Contains(content, entry) {
+			t.Errorf("missing entry %q after EnsureGitignore", entry)
+		}
+	}
+
+	// .nd.yaml should not be duplicated (it was in the partial).
+	count := strings.Count(content, ".nd.yaml")
+	if count != 1 {
+		t.Errorf(".nd.yaml should appear exactly once, got %d", count)
+	}
+}
 
 func TestInitAndOpen(t *testing.T) {
 	dir := t.TempDir()
