@@ -837,6 +837,51 @@ func TestFSMUndeferUsesConfiguredResumeStatus(t *testing.T) {
 	}
 }
 
+func TestUpdateDescription_ReplacesDescriptionSectionOnly(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	issue, err := s.CreateIssue("Test", "old description", "task", 2, "", nil, "")
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if err := s.AppendNotes(issue.ID, "keep these notes"); err != nil {
+		t.Fatalf("AppendNotes: %v", err)
+	}
+
+	before, err := s.ReadIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("ReadIssue before update: %v", err)
+	}
+	beforeHash := before.ContentHash
+
+	newDescription := "new description\nwith two lines"
+	if err := s.UpdateDescription(issue.ID, newDescription); err != nil {
+		t.Fatalf("UpdateDescription: %v", err)
+	}
+
+	after, err := s.ReadIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("ReadIssue after update: %v", err)
+	}
+
+	if !strings.Contains(after.Body, "## Description\nnew description\nwith two lines\n") {
+		t.Fatalf("description section not updated correctly:\n%s", after.Body)
+	}
+	if !strings.Contains(after.Body, "## Acceptance Criteria") {
+		t.Fatal("acceptance criteria section should be preserved")
+	}
+	if !strings.Contains(after.Body, "## Notes\nkeep these notes\n") {
+		t.Fatalf("notes section should be preserved:\n%s", after.Body)
+	}
+	if after.ContentHash == beforeHash {
+		t.Fatal("content hash should change when description changes")
+	}
+}
+
 func TestFSMBlockedEntry(t *testing.T) {
 	dir := t.TempDir()
 	s := setupFSMStore(t, dir)

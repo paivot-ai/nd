@@ -89,7 +89,7 @@ var updateCmd = &cobra.Command{
 
 		if cmd.Flags().Changed("description") {
 			v, _ := cmd.Flags().GetString("description")
-			if err := s.UpdateField(id, "description", v); err != nil {
+			if err := s.UpdateDescription(id, v); err != nil {
 				return err
 			}
 			changed = true
@@ -101,7 +101,7 @@ var updateCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if err := s.UpdateField(id, "description", body); err != nil {
+			if err := s.UpdateDescription(id, body); err != nil {
 				return err
 			}
 			changed = true
@@ -224,9 +224,9 @@ func init() {
 	updateCmd.Flags().String("assignee", "", "new assignee")
 	updateCmd.Flags().String("type", "", "new type")
 	updateCmd.Flags().String("append-notes", "", "append text to Notes section")
-	updateCmd.Flags().StringP("description", "d", "", "new description")
+	updateCmd.Flags().StringP("description", "d", "", "new Description section content")
 	updateCmd.Flags().String("parent", "", "set parent issue ID (empty to clear)")
-	updateCmd.Flags().String("body-file", "", "read description from file (- for stdin)")
+	updateCmd.Flags().String("body-file", "", "read Description section content from file (- for stdin)")
 	updateCmd.Flags().String("follows", "", "add follows link to predecessor issue")
 	updateCmd.Flags().String("unfollow", "", "remove follows link from predecessor issue")
 	updateCmd.Flags().String("set-labels", "", "replace all labels (comma-separated, empty to clear)")

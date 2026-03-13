@@ -127,6 +127,28 @@ func (s *Store) AppendNotes(id, content string) error {
 	})
 }
 
+// UpdateDescription replaces the content of the Description section while
+// preserving the rest of the issue body.
+func (s *Store) UpdateDescription(id, description string) error {
+	if err := s.vault.Patch(id, vlt.PatchOptions{
+		Heading:    "## Description",
+		Content:    description + "\n",
+		Timestamps: false,
+	}); err != nil {
+		return err
+	}
+
+	updated, err := s.ReadIssue(id)
+	if err != nil {
+		return err
+	}
+	hash := enforce.ComputeContentHash(updated.Body)
+	if err := s.vault.PropertySet(id, "content_hash", fmt.Sprintf("%q", hash)); err != nil {
+		return err
+	}
+	return s.touchUpdatedAt(id)
+}
+
 // UpdateBody replaces the body and recalculates the content hash.
 func (s *Store) UpdateBody(id, body string) error {
 	if err := s.vault.Write(id, body, false); err != nil {

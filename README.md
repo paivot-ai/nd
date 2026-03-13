@@ -419,8 +419,8 @@ nd update <id> [flags]
   --priority        New priority (0-4 or P0-P4)
   --assignee        New assignee
   --type            New type
-  -d, --description New description
-  --body-file       Read description from file (- for stdin)
+  -d, --description New Description section content
+  --body-file       Read Description section content from file (- for stdin)
   --append-notes    Append text to Notes section
   --parent          Set parent issue ID (empty to clear)
   --follows         Add follows link to predecessor issue
@@ -429,6 +429,8 @@ nd update <id> [flags]
   --add-label       Add label(s)
   --remove-label    Remove label(s)
 ```
+
+`--description` and `--body-file` update the `## Description` section only; they do not replace the full issue body.
 
 When FSM is enabled, `--status` transitions are validated against the configured sequence and exit rules.
 
