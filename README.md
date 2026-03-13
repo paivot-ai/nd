@@ -218,9 +218,9 @@ Issues live as markdown files in `<vault>/issues/`, where `<vault>` is resolved 
 - `--vault PATH` wins when provided
 - otherwise `ND_VAULT_DIR` wins when set
 - in normal repos, nd walks up from the current directory and uses the nearest `.vault/`
-- in Paivot-managed repos, nd uses the repository's git common dir and resolves the live vault to `$(git rev-parse --git-common-dir)/paivot/nd-vault`
+- in repos configured for shared worktree state, nd uses the repository's git common dir and resolves the live vault there instead of using a branch-local `.vault/`
 
-That Paivot behavior is intentional: it keeps the live backlog branch-independent across worktrees.
+That shared-worktree mode keeps the live backlog branch-independent across worktrees.
 
 Example issue file:
 
@@ -290,16 +290,15 @@ Typical local layout:
   .vlt.lock           # Advisory file lock
 ```
 
-Paivot-managed worktrees instead keep the live nd vault under the repo's git common dir:
+Repos using shared worktree state instead keep the live nd vault under the repo's git common dir:
 
 ```text
 <git-common-dir>/
-  paivot/
-    nd-vault/
-      .nd.yaml
-      issues/
-      .trash/
-      .vlt.lock
+  <shared-nd-vault>/
+    .nd.yaml
+    issues/
+    .trash/
+    .vlt.lock
 ```
 
 ### Configuration File
@@ -329,7 +328,7 @@ nd init --prefix=PROJ [--vault=PATH] [--author=NAME] [--track-issues]
 
 Creates the resolved vault directory structure and `.nd.yaml` config. Prefix is required -- it becomes part of every issue ID (e.g., `PROJ-a3f8`).
 
-If you do not pass `--vault`, `nd init` uses the same vault resolution rules described above. In a Paivot-managed repo, that means initialization happens in the shared git-common-dir vault, not in a branch-local `.vault/`.
+If you do not pass `--vault`, `nd init` uses the same vault resolution rules described above. In a repo using shared worktree state, that means initialization happens in the shared git-common-dir vault, not in a branch-local `.vault/`.
 
 By default, `nd` ignores live issue files and `.nd.yaml`, which keeps the mutable tracker local and makes `nd archive` the git-friendly export path. Use `--track-issues` to keep `.nd.yaml` and `issues/` in git for repos that want markdown issues to be the tracked system of record.
 
@@ -628,7 +627,7 @@ All commands support:
 --quiet         Suppress non-essential output
 ```
 
-`ND_VAULT_DIR` provides the same override via environment variable. Without either override, nd auto-discovers the nearest local `.vault/`, except in Paivot-managed repos where it resolves the shared git-common-dir vault.
+`ND_VAULT_DIR` provides the same override via environment variable. Without either override, nd auto-discovers the nearest local `.vault/`, except in repos using shared worktree state where it resolves the shared git-common-dir vault.
 
 ## Priority System
 

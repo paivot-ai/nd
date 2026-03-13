@@ -1,7 +1,7 @@
 {
   "name": "nd",
   "description": "Vault-backed issue tracker for AI coding workflows. Manage tasks, discover work, track dependencies, and maintain persistent context with plain markdown files.",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "author": {
     "name": "Ramiro Salas",
     "url": "https://github.com/RamXX"

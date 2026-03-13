@@ -5,7 +5,7 @@ description: >
   Use for multi-session work, dependency tracking, and persistent context that
   survives conversation compaction. No database server. No size limits. Git-native.
 allowed-tools: "Read,Bash(nd:*)"
-version: "0.10.2"
+version: "0.10.3"
 author: "Ramiro Salas <https://github.com/RamXX>"
 license: "Apache-2.0"
 ---
@@ -73,7 +73,7 @@ Essential commands: `nd ready`, `nd create`, `nd show`, `nd update`, `nd close`,
 
 ## Storage
 
-Issues are markdown files in `<vault>/issues/`. By default nd uses the nearest local `.vault/`, but `--vault` and `ND_VAULT_DIR` override that, and Paivot-managed repos resolve the live vault from the repo's git common dir so worktrees share one backlog. Each issue file has YAML frontmatter (id, status, priority, type, deps, follows/led_to) and markdown body (Description, Acceptance Criteria, Design, Notes, History, Links, Comments). You can `cat`, `grep`, and `git diff` them directly.
+Issues are markdown files in `<vault>/issues/`. By default nd uses the nearest local `.vault/`, but `--vault` and `ND_VAULT_DIR` override that, and repos using shared worktree state resolve the live vault from the repo's git common dir so worktrees share one backlog. Each issue file has YAML frontmatter (id, status, priority, type, deps, follows/led_to) and markdown body (Description, Acceptance Criteria, Design, Notes, History, Links, Comments). You can `cat`, `grep`, and `git diff` them directly.
 
 For the full storage format specification, see [STORAGE.md](resources/STORAGE.md).
 
