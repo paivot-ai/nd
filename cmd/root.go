@@ -39,11 +39,13 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "suppress non-essential output")
 }
 
+const sharedVaultConfigRelPath = ".vault/.nd-shared.yaml"
+
 // resolveVaultDir returns the nd vault directory.
 //
-// In Paivot-managed repos, the live vault is shared across branches and
-// worktrees under the repository's git common dir. Other repos fall back to the
-// nearest local .vault.
+// Repos that opt into shared worktree state via `.vault/.nd-shared.yaml` resolve
+// their live vault from the repository's git common dir. Other repos fall back
+// to the nearest local `.vault`.
 func resolveVaultDir() string {
 	if vaultDir != "" {
 		return vaultDir
@@ -53,7 +55,7 @@ func resolveVaultDir() string {
 	}
 
 	dir, _ := os.Getwd()
-	if path, err := resolvePaivotVaultDir(dir); err == nil {
+	if path, err := resolveSharedVaultDir(dir); err == nil {
 		return path
 	}
 
@@ -76,32 +78,34 @@ func errorf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "nd: "+format+"\n", args...)
 }
 
-func resolvePaivotVaultDir(start string) (string, error) {
-	if !isPaivotManaged(start) {
-		return "", fmt.Errorf("not a paivot-managed repo")
-	}
-
-	commonDir, err := gitCommonDir(start)
+func resolveSharedVaultDir(start string) (string, error) {
+	configPath, root, err := findSharedVaultConfig(start)
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(commonDir, "paivot", "nd-vault"), nil
+	mode, relPath, err := parseSharedVaultConfig(configPath)
+	if err != nil {
+		return "", err
+	}
+	if mode != "git_common_dir" {
+		return "", fmt.Errorf("unsupported shared nd mode %q", mode)
+	}
+
+	commonDir, err := gitCommonDir(root)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(commonDir, relPath), nil
 }
 
-func isPaivotManaged(start string) bool {
+func findSharedVaultConfig(start string) (path, root string, err error) {
 	dir := filepath.Clean(start)
 	for {
-		candidates := []string{
-			filepath.Join(dir, ".vault", "knowledge", ".settings.yaml"),
-			filepath.Join(dir, ".vault", "knowledge"),
-			filepath.Join(dir, ".vault", ".dispatcher-state.json"),
-			filepath.Join(dir, ".vault", ".piv-loop-state.json"),
-		}
-		for _, candidate := range candidates {
-			if _, err := os.Stat(candidate); err == nil {
-				return true
-			}
+		candidate := filepath.Join(dir, sharedVaultConfigRelPath)
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			return candidate, dir, nil
 		}
 
 		parent := parentDir(dir)
@@ -110,7 +114,41 @@ func isPaivotManaged(start string) bool {
 		}
 		dir = parent
 	}
-	return false
+	return "", "", fmt.Errorf("no shared nd config found")
+}
+
+func parseSharedVaultConfig(path string) (mode, relPath string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		switch key {
+		case "mode":
+			mode = value
+		case "path":
+			relPath = filepath.Clean(value)
+		}
+	}
+
+	if mode == "" || relPath == "" {
+		return "", "", fmt.Errorf("invalid shared nd config %s", path)
+	}
+	if filepath.IsAbs(relPath) || relPath == "." || relPath == "" {
+		return "", "", fmt.Errorf("invalid shared nd path %q", relPath)
+	}
+	return mode, relPath, nil
 }
 
 func resolveLocalVaultDir(start string) (string, error) {
