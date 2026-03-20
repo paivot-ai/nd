@@ -353,15 +353,14 @@ nd children PROJ-a3f
 ```bash
 # Terminal DAG of dependency graph
 nd graph                                          # All root issues (no blockers)
-nd graph --status=in_progress                     # Filter by status
-nd graph --all                                    # Include closed issues
+nd graph PROJ-a3f                                 # Graph from specific issue
 
 # Execution path tree (follows/led_to chains)
 nd path                                           # All path roots (chain starting points)
 nd path PROJ-a3f                                  # Execution chain from specific issue
 ```
 
-`nd graph` renders the dependency graph (structural). `nd path` renders the execution path tree (temporal). Status icons: `[ ]` open, `[>]` in_progress, `[!]` blocked, `[-]` deferred, `[x]` closed.
+`nd graph` renders the dependency graph (structural). `nd path` renders the execution path tree (temporal). Both accept an optional issue ID. Status icons: `[ ]` open, `[>]` in_progress, `[!]` blocked, `[-]` deferred, `[x]` closed.
 
 ## Search and Stats
 
@@ -386,7 +385,7 @@ nd count --status=open                            # Filter before counting
 nd defer PROJ-a3f                                 # Defer indefinitely
 nd defer PROJ-a3f --until=2026-03-01              # Defer until date
 
-# Restore a deferred issue to open
+# Restore a deferred issue to its configured resume status
 nd undefer PROJ-a3f
 ```
 
@@ -484,14 +483,14 @@ Three-pass import:
 2. **Pass 2**: Wires dependencies (parent-child, blocks, related) and promotes parents to epics
 3. **Pass 3**: Infers `follows`/`led_to` execution trajectories from `closed_at` timestamps -- sibling chains under shared parents, related orphan chains, and epic-to-epic chains
 
-The import is idempotent: if Pass 1 imports zero new issues (all already exist), passes 2 and 3 are skipped and a message is printed. Use `--force` to run passes 2 and 3 regardless. After migration, `nd path` shows the full execution history. See [MIGRATION.md](MIGRATION.md) for details.
+The import is idempotent: if Pass 1 imports zero new issues (all already exist), passes 2 and 3 are skipped and a message is printed. Use `--force` to run passes 2 and 3 regardless. After migration, `nd path` shows the full execution history. See `nd migrate --help` for details.
 
 ## Global Flags
 
 All commands support these flags:
 
 ```bash
---version        # Print nd version and exit (also: -v)
+--version        # Print nd version and exit
 --vault PATH     # Override vault directory (default: .vault, auto-discovered)
 --json           # Output as JSON
 --verbose        # Verbose output

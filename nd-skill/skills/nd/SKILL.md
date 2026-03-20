@@ -5,7 +5,7 @@ description: >
   Use for multi-session work, dependency tracking, and persistent context that
   survives conversation compaction. No database server. No size limits. Git-native.
 allowed-tools: "Read,Bash(nd:*)"
-version: "0.10.3"
+version: "0.10.5"
 author: "Ramiro Salas <https://github.com/RamXX>"
 license: "Apache-2.0"
 ---
@@ -95,7 +95,7 @@ For the full storage format specification, see [STORAGE.md](resources/STORAGE.md
 | Search | `nd search "query"` | -- |
 | Health | `nd doctor [--fix]` | [TROUBLESHOOTING.md](resources/TROUBLESHOOTING.md) |
 | AI context | `nd prime [--json]` | -- |
-| Import | `nd import --from-beads` | [MIGRATION.md](resources/MIGRATION.md) |
+| Import | `nd migrate --from-beads` | [CLI_REFERENCE.md](resources/CLI_REFERENCE.md) |
 
 ## Resources
 
@@ -107,7 +107,6 @@ For the full storage format specification, see [STORAGE.md](resources/STORAGE.md
 | [DEPENDENCIES.md](resources/DEPENDENCIES.md) | Dependency semantics and epic planning |
 | [EPICS.md](resources/EPICS.md) | Epic hierarchies and tree views |
 | [STORAGE.md](resources/STORAGE.md) | File format, frontmatter schema, vault layout |
-| [MIGRATION.md](resources/MIGRATION.md) | Migrating from beads (bd) to nd |
 | [TROUBLESHOOTING.md](resources/TROUBLESHOOTING.md) | Common problems and fixes |
 | [PATTERNS.md](resources/PATTERNS.md) | Usage patterns for AI agents |
 
