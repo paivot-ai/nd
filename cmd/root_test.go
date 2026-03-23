@@ -35,6 +35,10 @@ func TestResolveVaultDir_FallsBackToNearestLocalVault(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".vault"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// resolveLocalVaultDir requires .nd.yaml to exist (not just the directory)
+	if err := os.WriteFile(filepath.Join(projectRoot, ".vault", ".nd.yaml"), []byte("version: \"1\"\nprefix: TEST\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +82,69 @@ func TestResolveVaultDir_UsesEnvironmentOverride(t *testing.T) {
 
 	if got := resolveVaultDir(); got != override {
 		t.Fatalf("resolveVaultDir() = %q, want %q", got, override)
+	}
+}
+
+// TestResolveVaultDir_WorktreeFallbackFindsMainVault verifies that when
+// running inside a secondary git worktree where .vault is gitignored (absent),
+// resolveVaultDir falls back to the main worktree's .vault.
+func TestResolveVaultDir_WorktreeFallbackFindsMainVault(t *testing.T) {
+	base := t.TempDir()
+
+	// Main repo with .vault
+	mainRepo := filepath.Join(base, "main-repo")
+	mainGitDir := filepath.Join(mainRepo, ".git")
+	mainVault := filepath.Join(mainRepo, ".vault")
+	if err := os.MkdirAll(mainGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(mainVault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Secondary worktree -- NO .vault (gitignored), .git is a file
+	worktree := filepath.Join(mainRepo, ".claude", "worktrees", "agent-abc")
+	worktreeGitDir := filepath.Join(mainGitDir, "worktrees", "agent-abc")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(worktreeGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Worktree .git file points to the worktree git dir
+	gitPtr := "gitdir: " + filepath.ToSlash(worktreeGitDir) + "\n"
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte(gitPtr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// commondir points back to the main .git
+	if err := os.WriteFile(filepath.Join(worktreeGitDir, "commondir"), []byte("../../\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(oldWD) }()
+	if err := os.Chdir(worktree); err != nil {
+		t.Fatal(err)
+	}
+
+	oldVault := vaultDir
+	vaultDir = ""
+	defer func() { vaultDir = oldVault }()
+
+	got := resolveVaultDir()
+	if resolved, rerr := filepath.EvalSymlinks(got); rerr == nil {
+		got = resolved
+	}
+	want := mainVault
+	if resolved, rerr := filepath.EvalSymlinks(want); rerr == nil {
+		want = resolved
+	}
+	if got != want {
+		t.Fatalf("resolveVaultDir() from worktree = %q, want main vault %q", got, want)
 	}
 }
 

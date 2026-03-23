@@ -45,7 +45,9 @@ const sharedVaultConfigRelPath = ".vault/.nd-shared.yaml"
 //
 // Repos that opt into shared worktree state via `.vault/.nd-shared.yaml` resolve
 // their live vault from the repository's git common dir. Other repos fall back
-// to the nearest local `.vault`.
+// to the nearest local `.vault`. When running inside a secondary git worktree
+// where `.vault` is gitignored and absent, the resolver falls back to the main
+// worktree's `.vault`.
 func resolveVaultDir() string {
 	if vaultDir != "" {
 		return vaultDir
@@ -54,12 +56,24 @@ func resolveVaultDir() string {
 		return filepath.Clean(override)
 	}
 
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		errorf("cannot determine working directory: %v", err)
+		return ".vault"
+	}
+
 	if path, err := resolveSharedVaultDir(dir); err == nil {
 		return path
 	}
 
 	if path, err := resolveLocalVaultDir(dir); err == nil {
+		return path
+	}
+
+	// Worktree fallback: if we are in a secondary git worktree where
+	// .vault is gitignored (and therefore absent), resolve .vault from
+	// the main worktree instead.
+	if path, err := resolveMainWorktreeVault(dir); err == nil {
 		return path
 	}
 
@@ -156,7 +170,12 @@ func resolveLocalVaultDir(start string) (string, error) {
 	for {
 		candidate := filepath.Join(dir, ".vault")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
+			// Only accept a .vault that actually contains .nd.yaml.
+			// Worktree checkouts may contain a skeletal .vault/ with
+			// only tracked files (.gitignore) but no nd state.
+			if _, ndErr := os.Stat(filepath.Join(candidate, ".nd.yaml")); ndErr == nil {
+				return candidate, nil
+			}
 		}
 		parent := parentDir(dir)
 		if parent == dir {
@@ -211,6 +230,61 @@ func gitCommonDir(start string) (string, error) {
 	}
 
 	return gitDir, nil
+}
+
+// resolveMainWorktreeVault finds the .vault in the main worktree when
+// running inside a secondary git worktree. Secondary worktrees have a
+// .git file (not directory) that points to .git/worktrees/<name>. By
+// following the commondir pointer we locate the main repo and its .vault.
+func resolveMainWorktreeVault(start string) (string, error) {
+	repoRoot, err := findRepoRoot(start)
+	if err != nil {
+		return "", err
+	}
+
+	gitPath := filepath.Join(repoRoot, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil || info.IsDir() {
+		return "", fmt.Errorf("not a git worktree")
+	}
+
+	data, err := os.ReadFile(gitPath)
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(string(data))
+	const prefix = "gitdir:"
+	if !strings.HasPrefix(line, prefix) {
+		return "", fmt.Errorf("not a gitdir pointer")
+	}
+
+	gitDir := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(repoRoot, gitDir)
+	}
+	gitDir = filepath.Clean(gitDir)
+
+	commonData, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err != nil {
+		return "", err
+	}
+	commonDir := strings.TrimSpace(string(commonData))
+	if commonDir == "" {
+		return "", fmt.Errorf("empty commondir")
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(gitDir, commonDir)
+	}
+	commonDir = filepath.Clean(commonDir)
+
+	// Main worktree root is the parent of the .git directory.
+	mainRoot := filepath.Dir(commonDir)
+	candidate := filepath.Join(mainRoot, ".vault")
+	if vaultInfo, statErr := os.Stat(candidate); statErr == nil && vaultInfo.IsDir() {
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("no .vault in main worktree %s", mainRoot)
 }
 
 func findRepoRoot(start string) (string, error) {
