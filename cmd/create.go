@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/RamXX/nd/internal/model"
 	"github.com/RamXX/nd/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,12 @@ var createCmd = &cobra.Command{
 			return fmt.Errorf("title is required (positional argument or --title)")
 		}
 		issueType, _ := cmd.Flags().GetString("type")
-		priority, _ := cmd.Flags().GetInt("priority")
+		priorityStr, _ := cmd.Flags().GetString("priority")
+		prio, err := model.ParsePriority(priorityStr)
+		if err != nil {
+			return err
+		}
+		priority := int(prio)
 		assignee, _ := cmd.Flags().GetString("assignee")
 		labelsStr, _ := cmd.Flags().GetString("labels")
 		description, _ := cmd.Flags().GetString("description")
@@ -82,7 +88,7 @@ var createCmd = &cobra.Command{
 func init() {
 	createCmd.Flags().String("title", "", "issue title (alternative to positional argument)")
 	createCmd.Flags().StringP("type", "t", "task", "issue type (bug, feature, task, epic, chore, decision)")
-	createCmd.Flags().IntP("priority", "p", 2, "priority 0-4 (0=critical)")
+	createCmd.Flags().StringP("priority", "p", "2", "priority (0-4 or P0-P4, default P2)")
 	createCmd.Flags().String("assignee", "", "assignee")
 	createCmd.Flags().String("labels", "", "comma-separated labels")
 	createCmd.Flags().StringP("description", "d", "", "issue description")
