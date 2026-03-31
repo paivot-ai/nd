@@ -95,9 +95,32 @@ func depAddRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// commentCmd is a hidden alias for "comments" (singular form).
+// Agents consistently try "nd comment add" instead of "nd comments add".
+var commentCmd = &cobra.Command{
+	Use:    "comment",
+	Short:  "Manage comments (alias for comments)",
+	Hidden: true,
+}
+
 func init() {
+	// Copy subcommands from commentsCmd to the singular alias.
+	commentCmd.AddCommand(&cobra.Command{
+		Use:   "add <id> <text>",
+		Short: "Add a comment (alias for comments add)",
+		Args:  cobra.MinimumNArgs(2),
+		RunE:  commentsAddCmd.RunE,
+	})
+	commentCmd.AddCommand(&cobra.Command{
+		Use:   "list <id>",
+		Short: "List comments (alias for comments list)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  commentsListCmd.RunE,
+	})
+
 	rootCmd.AddCommand(resolveCmd)
 	rootCmd.AddCommand(unblockCmd)
 	rootCmd.AddCommand(blockCmd)
 	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(commentCmd)
 }

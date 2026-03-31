@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/RamXX/nd/internal/model"
 	"github.com/RamXX/nd/internal/store"
@@ -206,6 +207,17 @@ var updateCmd = &cobra.Command{
 			changed = true
 		}
 
+		if cmd.Flags().Changed("comment") {
+			v, _ := cmd.Flags().GetString("comment")
+			now := time.Now().UTC().Format(time.RFC3339)
+			author := s.Config().CreatedBy
+			comment := fmt.Sprintf("\n### %s %s\n%s\n", now, author, v)
+			if err := s.Vault().Append(id, comment, false); err != nil {
+				return fmt.Errorf("append comment: %w", err)
+			}
+			changed = true
+		}
+
 		if !changed {
 			return fmt.Errorf("no fields specified to update")
 		}
@@ -232,5 +244,6 @@ func init() {
 	updateCmd.Flags().String("set-labels", "", "replace all labels (comma-separated, empty to clear)")
 	updateCmd.Flags().StringSlice("add-label", nil, "add labels")
 	updateCmd.Flags().StringSlice("remove-label", nil, "remove labels")
+	updateCmd.Flags().String("comment", "", "add a comment (shorthand for comments add)")
 	rootCmd.AddCommand(updateCmd)
 }
