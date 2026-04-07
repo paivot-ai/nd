@@ -62,6 +62,10 @@ var invalidFlagsForNonArchive = map[string]string{
 // "nd" inside paths (e.g., /workspace/nd) or words (find, and, send).
 var ndCmdPattern = regexp.MustCompile(`(?:^|[\s;|&(])nd\s+(\S+)`)
 
+// pvgNDPattern matches `pvg nd <subcommand>` -- these are pvg subcommands
+// routed through pvg's own command tree, not bare nd commands.
+var pvgNDPattern = regexp.MustCompile(`pvg\s+nd\s+(\S+)`)
+
 // ndFlagPattern matches `nd ... --flag` patterns
 var ndFlagPattern = regexp.MustCompile(`nd\s+[^|;&]*?(--\S+)`)
 
@@ -97,6 +101,13 @@ var guardCmd = &cobra.Command{
 		// Build the set of valid subcommands from the cobra command tree.
 		validCmds := buildValidCommandSet(rootCmd)
 
+		// Collect pvg nd subcommands -- these are routed by pvg, not bare nd,
+		// and may include pvg-specific subcommands (root, stats, etc.).
+		pvgSubcmds := make(map[string]bool)
+		for _, pm := range pvgNDPattern.FindAllStringSubmatch(bash.Command, -1) {
+			pvgSubcmds[pm[1]] = true
+		}
+
 		// Find all nd subcommands in the bash command.
 		matches := ndCmdPattern.FindAllStringSubmatch(bash.Command, -1)
 
@@ -111,6 +122,12 @@ var guardCmd = &cobra.Command{
 				continue
 			}
 			seen[subcmd] = true
+
+			// Skip subcommands that are part of a `pvg nd` invocation --
+			// pvg routes its own subcommands (root, stats, etc.).
+			if pvgSubcmds[subcmd] {
+				continue
+			}
 
 			if !validCmds[subcmd] {
 				suggestion := ""
