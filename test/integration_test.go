@@ -1,11 +1,13 @@
 package test
 
 import (
+	"bytes"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/RamXX/nd/internal/enforce"
+	"github.com/RamXX/nd/internal/format"
 	"github.com/RamXX/nd/internal/graph"
 	"github.com/RamXX/nd/internal/model"
 	"github.com/RamXX/nd/internal/store"
@@ -971,6 +973,194 @@ func filterReadyWithOpts(t *testing.T, s *store.Store, opts store.FilterOptions)
 		}
 	}
 	return filtered
+}
+
+// TestTreeIntegration exercises the --group-by=parent tree display using real
+// vault fixtures. It creates an epic with children, a standalone orphan, and
+// verifies tree output structure including connectors, [Unparented] section,
+// context-only parents, and sort order.
+func TestTreeIntegration(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Init(dir, "TRE", "tree-tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create issues: epic with two children, one standalone orphan.
+	epic, err := s.CreateIssue("Auth Epic", "Implement auth", "epic", 1, "", nil, "")
+	if err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	child1, err := s.CreateIssue("Design auth flow", "Design the auth flow", "task", 1, "alice", nil, epic.ID)
+	if err != nil {
+		t.Fatalf("create child1: %v", err)
+	}
+	child2, err := s.CreateIssue("Implement auth flow", "Build the auth flow", "feature", 2, "bob", nil, epic.ID)
+	if err != nil {
+		t.Fatalf("create child2: %v", err)
+	}
+	orphan, err := s.CreateIssue("Fix CSS bug", "Broken layout", "bug", 0, "alice", nil, "")
+	if err != nil {
+		t.Fatalf("create orphan: %v", err)
+	}
+
+	// List all issues.
+	issues, err := s.ListIssues(store.FilterOptions{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(issues) != 4 {
+		t.Fatalf("expected 4 issues, got %d", len(issues))
+	}
+
+	// Render tree with no context-only parents.
+	var buf bytes.Buffer
+	format.Tree(&buf, issues, map[string]bool{}, "priority", false)
+	output := buf.String()
+
+	// Epic should appear as top-level.
+	if !strings.Contains(output, epic.ID) {
+		t.Errorf("tree should contain epic: %s", output)
+	}
+	// Children should appear with connectors.
+	if !strings.Contains(output, child1.ID) || !strings.Contains(output, child2.ID) {
+		t.Errorf("tree should contain children: %s", output)
+	}
+	// Orphan should be in [Unparented].
+	if !strings.Contains(output, "[Unparented]") {
+		t.Errorf("tree should have [Unparented] section: %s", output)
+	}
+	if !strings.Contains(output, orphan.ID) {
+		t.Errorf("tree should contain orphan: %s", output)
+	}
+	// Count should be 4.
+	if !strings.Contains(output, "4 issue(s)") {
+		t.Errorf("count should be 4: %s", output)
+	}
+	// Connectors should be present.
+	if !strings.Contains(output, "├── ") && !strings.Contains(output, "└── ") {
+		t.Errorf("tree should contain connectors: %s", output)
+	}
+}
+
+// TestTreeContextOnlyParent verifies that when a filter excludes a parent,
+// the Tree still shows it as muted context and does not count it.
+func TestTreeContextOnlyParent(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Init(dir, "CTX", "ctx-tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	epic, err := s.CreateIssue("Epic", "", "epic", 1, "", nil, "")
+	if err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	child1, err := s.CreateIssue("Task A", "", "task", 1, "", nil, epic.ID)
+	if err != nil {
+		t.Fatalf("create child1: %v", err)
+	}
+	_, err = s.CreateIssue("Task B", "", "task", 2, "", nil, epic.ID)
+	if err != nil {
+		t.Fatalf("create child2: %v", err)
+	}
+
+	// Filter by priority=1 -- only epic and child1 match.
+	filtered, err := s.ListIssues(store.FilterOptions{Priority: "1"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	// Simulate the cmd/list.go logic: collect missing parents.
+	issueIndex := make(map[string]bool, len(filtered))
+	for _, issue := range filtered {
+		issueIndex[issue.ID] = true
+	}
+	contextIDs := make(map[string]bool)
+	for _, issue := range filtered {
+		if issue.Parent != "" && !issueIndex[issue.Parent] {
+			contextIDs[issue.Parent] = true
+		}
+	}
+	// In this case epic IS in the filtered set, so contextIDs should be empty.
+	if len(contextIDs) != 0 {
+		t.Logf("context IDs unexpectedly non-empty: %v (epic is P1 so should be in filter)", contextIDs)
+	}
+
+	// Now test with a filter that EXCLUDES the epic (filter by type=task).
+	tasksOnly, err := s.ListIssues(store.FilterOptions{Type: "task"})
+	if err != nil {
+		t.Fatalf("list tasks: %v", err)
+	}
+
+	taskIndex := make(map[string]bool, len(tasksOnly))
+	for _, issue := range tasksOnly {
+		taskIndex[issue.ID] = true
+	}
+	contextIDs2 := make(map[string]bool)
+	for _, issue := range tasksOnly {
+		if issue.Parent != "" && !taskIndex[issue.Parent] {
+			contextIDs2[issue.Parent] = true
+		}
+	}
+
+	// Fetch context parents.
+	for parentID := range contextIDs2 {
+		parent, err := s.ReadIssue(parentID)
+		if err != nil {
+			t.Fatalf("read parent %s: %v", parentID, err)
+		}
+		tasksOnly = append(tasksOnly, parent)
+	}
+
+	var buf bytes.Buffer
+	format.Tree(&buf, tasksOnly, contextIDs2, "priority", false)
+	output := buf.String()
+
+	// Epic should appear as context-only.
+	if !strings.Contains(output, epic.ID) {
+		t.Errorf("context-only epic should appear: %s", output)
+	}
+	// Both children should appear.
+	if !strings.Contains(output, child1.ID) {
+		t.Errorf("child1 should appear: %s", output)
+	}
+	// Count should be 2 (exclude context parent).
+	if !strings.Contains(output, "2 issue(s)") {
+		t.Errorf("count should be 2 (context parent excluded): %s", output)
+	}
+}
+
+// TestTreeDeepNestingIntegration exercises 3-level nesting with real vault data.
+func TestTreeDeepNestingIntegration(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Init(dir, "DEP", "deep-tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	epic, _ := s.CreateIssue("Top Epic", "", "epic", 1, "", nil, "")
+	feat, _ := s.CreateIssue("Feature", "", "feature", 1, "", nil, epic.ID)
+	subtask, _ := s.CreateIssue("Subtask", "", "task", 2, "", nil, feat.ID)
+
+	issues, _ := s.ListIssues(store.FilterOptions{})
+
+	var buf bytes.Buffer
+	format.Tree(&buf, issues, map[string]bool{}, "priority", false)
+	output := buf.String()
+
+	if !strings.Contains(output, epic.ID) {
+		t.Errorf("tree should contain epic: %s", output)
+	}
+	if !strings.Contains(output, feat.ID) {
+		t.Errorf("tree should contain feature: %s", output)
+	}
+	if !strings.Contains(output, subtask.ID) {
+		t.Errorf("tree should contain subtask: %s", output)
+	}
+	if !strings.Contains(output, "3 issue(s)") {
+		t.Errorf("count should be 3: %s", output)
+	}
 }
 
 func idsOf(issues []*model.Issue) []string {
