@@ -6,16 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/RamXX/nd/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var version = "dev"
 
 var (
-	vaultDir string
-	jsonOut  bool
-	verbose  bool
-	quiet    bool
+	vaultDir  string
+	jsonOut   bool
+	verbose   bool
+	quiet     bool
+	colorMode string
 )
 
 var rootCmd = &cobra.Command{
@@ -24,6 +26,9 @@ var rootCmd = &cobra.Command{
 	Long:         "nd -- Git-native issue tracking with Obsidian-compatible markdown files.",
 	Version:      version,
 	SilenceUsage: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return ui.SetColorMode(colorMode)
+	},
 }
 
 func Execute() {
@@ -37,6 +42,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "output as JSON")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "suppress non-essential output")
+	rootCmd.PersistentFlags().StringVar(&colorMode, "color", "auto", "color output mode: always, auto, never")
 }
 
 const sharedVaultConfigRelPath = ".vault/.nd-shared.yaml"
