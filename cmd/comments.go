@@ -60,7 +60,11 @@ var commentsListCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		content, err := s.Vault().Read(id, "Comments")
+		// Pass the heading WITH the markdown prefix. vlt v0.8.x's findSection
+		// requires it (the bare-text form was added in newer vlt). Without
+		// the "## " prefix every comments-list call returns "heading not found"
+		// even when the section exists.
+		content, err := s.Vault().Read(id, "## Comments")
 		if err != nil {
 			return err
 		}
