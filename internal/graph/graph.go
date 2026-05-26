@@ -1,6 +1,6 @@
 package graph
 
-import "github.com/RamXX/nd/internal/model"
+import "github.com/paivot-ai/nd/internal/model"
 
 // Graph is an in-memory dependency graph built from a slice of issues.
 type Graph struct {

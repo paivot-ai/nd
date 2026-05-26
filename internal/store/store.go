@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/vlt"
 	"gopkg.in/yaml.v3"
 )
 

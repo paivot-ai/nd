@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 

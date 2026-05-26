@@ -1,8 +1,8 @@
 # nd - Vault-backed Issue Tracker
 
-[![CI](https://github.com/RamXX/nd/actions/workflows/ci.yml/badge.svg)](https://github.com/RamXX/nd/actions/workflows/ci.yml)
-[![Release](https://github.com/RamXX/nd/actions/workflows/release.yml/badge.svg)](https://github.com/RamXX/nd/actions/workflows/release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/RamXX/nd)](https://goreportcard.com/report/github.com/RamXX/nd)
+[![CI](https://github.com/paivot-ai/nd/actions/workflows/ci.yml/badge.svg)](https://github.com/paivot-ai/nd/actions/workflows/ci.yml)
+[![Release](https://github.com/paivot-ai/nd/actions/workflows/release.yml/badge.svg)](https://github.com/paivot-ai/nd/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/paivot-ai/nd)](https://goreportcard.com/report/github.com/paivot-ai/nd)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 **nd** (short for `node` as node in a graph) is a Git-native issue tracker that stores issues as Obsidian-compatible markdown files with YAML frontmatter. No database server. No field size limits. Plain files you can read, grep, and version with git.
@@ -20,7 +20,7 @@ We built [beads](https://github.com/steveyegge/beads) (`bd`) into the backbone o
 - **Migration headaches.** Schema migrations, repo fingerprint mismatches, shared server database confusion, JSONL import gaps. Every other session starts with `bd doctor --fix`.
 - **Not inspectable.** Issues live in a binary database. You can't `cat` an issue, `grep` across your backlog, or diff changes in a PR review.
 
-`nd` solves all of this by storing issues as plain markdown files in a directory. The storage layer is [vlt](https://github.com/RamXX/vlt), an Obsidian-compliant vault management library, used as an importable Go library. vlt handles file I/O, frontmatter parsing, search, file locking, and content patching. `nd` adds issue-tracker semantics on top.
+`nd` solves all of this by storing issues as plain markdown files in a directory. The storage layer is [vlt](https://github.com/paivot-ai/vlt), an Obsidian-compliant vault management library, used as an importable Go library. vlt handles file I/O, frontmatter parsing, search, file locking, and content patching. `nd` adds issue-tracker semantics on top.
 
 ## nd vs beads
 
@@ -45,7 +45,7 @@ Both tools use the same ID format (`PREFIX-HASH`, 4 base36 chars from SHA-256) f
 
 ### What vlt Provides
 
-[vlt](https://github.com/RamXX/vlt) (`github.com/RamXX/vlt`) is an Obsidian-compatible vault CLI and Go library. nd imports it directly for:
+[vlt](https://github.com/paivot-ai/vlt) (`github.com/paivot-ai/vlt`) is an Obsidian-compatible vault CLI and Go library. nd imports it directly for:
 
 | Capability | vlt API | nd usage |
 |---|---|---|
@@ -66,7 +66,7 @@ nd adds: issue model with validation, collision-resistant ID generation, depende
 ## Installation
 
 ```bash
-git clone https://github.com/RamXX/nd.git
+git clone https://github.com/paivot-ai/nd.git
 cd nd
 make build
 make install    # Installs to ~/go/bin/nd

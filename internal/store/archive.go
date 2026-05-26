@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 // ArchiveOptions controls what the archive includes and where it goes.

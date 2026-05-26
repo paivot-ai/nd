@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/RamXX/nd/internal/store"
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/nd/internal/store"
+	"github.com/paivot-ai/vlt"
 	"github.com/spf13/cobra"
 )
 

@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RamXX/nd/internal/enforce"
-	"github.com/RamXX/nd/internal/graph"
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/nd/internal/store"
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/nd/internal/enforce"
+	"github.com/paivot-ai/nd/internal/graph"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/store"
+	"github.com/paivot-ai/vlt"
 )
 
 // Full workflow: init -> create -> dep -> ready -> close -> stats.

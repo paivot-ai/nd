@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RamXX/nd/internal/enforce"
-	"github.com/RamXX/nd/internal/idgen"
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/nd/internal/enforce"
+	"github.com/paivot-ai/nd/internal/idgen"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/vlt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,11 +73,11 @@ func (s *Store) createIssue(id, title, description, issueType string, priority i
 
 // ReadIssue reads and deserializes an issue by ID.
 func (s *Store) ReadIssue(id string) (*model.Issue, error) {
-	content, err := s.vault.Read(id, "")
+	res, err := s.vault.Read(id, "")
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", id, err)
 	}
-	issue, err := deserializeIssue(content)
+	issue, err := deserializeIssue(res.Content)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", id, err)
 	}

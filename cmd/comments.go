@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -60,20 +60,16 @@ var commentsListCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		// Pass the heading WITH the markdown prefix. vlt v0.8.x's findSection
-		// requires it (the bare-text form was added in newer vlt). Without
-		// the "## " prefix every comments-list call returns "heading not found"
-		// even when the section exists.
-		content, err := s.Vault().Read(id, "## Comments")
+		res, err := s.Vault().Read(id, "Comments")
 		if err != nil {
 			return err
 		}
 
-		if strings.TrimSpace(content) == "" {
+		if strings.TrimSpace(res.Content) == "" {
 			fmt.Println("No comments.")
 			return nil
 		}
-		fmt.Print(content)
+		fmt.Print(res.Content)
 		return nil
 	},
 }

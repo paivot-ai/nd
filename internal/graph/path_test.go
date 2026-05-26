@@ -3,7 +3,7 @@ package graph
 import (
 	"testing"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 func makePathIssue(id string, status model.Status, ledTo, follows []string) *model.Issue {

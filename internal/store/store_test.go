@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 func gitignoreLineSet(content string) map[string]bool {

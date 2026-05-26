@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/RamXX/nd/internal/graph"
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/graph"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 

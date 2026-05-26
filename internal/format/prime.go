@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 // PrimeContext outputs a structured summary suitable for AI context injection.

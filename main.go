@@ -1,6 +1,6 @@
 package main
 
-import "github.com/RamXX/nd/cmd"
+import "github.com/paivot-ai/nd/cmd"
 
 func main() {
 	cmd.Execute()

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RamXX/nd/internal/enforce"
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/vlt"
+	"github.com/paivot-ai/nd/internal/enforce"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/vlt"
 )
 
 // UpdateField updates a single frontmatter field on an issue.

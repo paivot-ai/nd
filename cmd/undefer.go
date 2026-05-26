@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 

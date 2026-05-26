@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 // EpicNode represents an epic and its children in a tree.

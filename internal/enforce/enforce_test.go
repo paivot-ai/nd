@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 func TestComputeContentHash(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/nd/internal/ui"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/ui"
 )
 
 // Table renders a compact issue list with status icons, colors, and bd-style formatting.

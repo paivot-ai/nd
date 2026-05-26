@@ -3,7 +3,7 @@ package enforce
 import (
 	"fmt"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 // ValidateIssue runs structural validation on an issue.

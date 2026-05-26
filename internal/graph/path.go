@@ -3,7 +3,7 @@ package graph
 import (
 	"sort"
 
-	"github.com/RamXX/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/model"
 )
 
 // PathNode represents an issue and its successors in an execution path tree.

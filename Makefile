@@ -1,4 +1,4 @@
-MODULE := github.com/RamXX/nd
+MODULE := github.com/paivot-ai/nd
 BIN    := nd
 PREFIX := $(HOME)/go/bin
 
@@ -18,7 +18,7 @@ VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
 PLUGIN_VERSION := $(shell echo $(VERSION) | sed 's/^v//')
 
 build: ## Build nd binary
-	go build -ldflags "-X github.com/RamXX/nd/cmd.version=$(VERSION)" -o $(BIN) .
+	go build -ldflags "-X github.com/paivot-ai/nd/cmd.version=$(VERSION)" -o $(BIN) .
 
 test: ## Run tests
 	go test -v ./...

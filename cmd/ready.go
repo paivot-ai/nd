@@ -3,10 +3,10 @@ package cmd
 import (
 	"os"
 
-	"github.com/RamXX/nd/internal/format"
-	"github.com/RamXX/nd/internal/graph"
-	"github.com/RamXX/nd/internal/model"
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/format"
+	"github.com/paivot-ai/nd/internal/graph"
+	"github.com/paivot-ai/nd/internal/model"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 

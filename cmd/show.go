@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/RamXX/nd/internal/format"
-	"github.com/RamXX/nd/internal/store"
+	"github.com/paivot-ai/nd/internal/format"
+	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
 
