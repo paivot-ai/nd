@@ -5,7 +5,7 @@ description: >
   Use for multi-session work, dependency tracking, and persistent context that
   survives conversation compaction. No database server. No size limits. Git-native.
 allowed-tools: "Read,Bash(nd:*)"
-version: "0.10.14"
+version: "0.10.15"
 author: "Ramiro Salas <https://github.com/RamXX>"
 license: "Apache-2.0"
 ---

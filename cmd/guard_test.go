@@ -1,8 +1,64 @@
 package cmd
 
 import (
+	"reflect"
 	"testing"
 )
+
+// TestExtractNDSubcommands_NoFalsePositives covers commands where "nd" appears
+// only inside strings, comments, heredocs, paths, or as an argument to another
+// command. None of these should be treated as nd subcommands.
+func TestExtractNDSubcommands_NoFalsePositives(t *testing.T) {
+	cases := []string{
+		`echo "=== current installed nd ==="`,
+		`command -v nd >/dev/null`,
+		`command -v nd 2>/dev/null`,
+		`grep "nd guard" cmd/guard.go`,
+		`vlt create content="project: nd` + "\n" + `stack: [go]"`,
+		`echo "see nd release notes"`,
+		`echo "fix nd status output"`,
+		`# remember to run nd status later`,
+		"cat <<EOF\nnd status is documented here\nEOF",
+		`ls /Users/me/workspace/nd`,
+		`find . -name '*.go'`,
+		`git commit -m "bump nd version"`,
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) {
+			if got := extractNDSubcommands(c); len(got) != 0 {
+				t.Errorf("expected no subcommands for %q, got %v", c, got)
+			}
+		})
+	}
+}
+
+// TestExtractNDSubcommands_CatchesCommandPosition ensures genuine
+// command-position nd invocations are still extracted for validation.
+func TestExtractNDSubcommands_CatchesCommandPosition(t *testing.T) {
+	cases := []struct {
+		command string
+		want    []string
+	}{
+		{`nd status`, []string{"status"}},
+		{`nd list`, []string{"list"}},
+		{`  nd show ABC-123`, []string{"show"}},
+		{`cd /tmp && nd find foo`, []string{"find"}},
+		{`nd show X; nd bogus Y`, []string{"show", "bogus"}},
+		{`true | nd list`, []string{"list"}},
+		{`$(nd frobnicate)`, []string{"frobnicate"}},
+		{`pvg nd root && nd badcmd`, []string{"badcmd"}},
+		{`nd --version`, nil},
+		{`nd hallucinated_cmd foo`, []string{"hallucinated_cmd"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.command, func(t *testing.T) {
+			got := extractNDSubcommands(tc.command)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("extractNDSubcommands(%q) = %v, want %v", tc.command, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestPvgNDPattern_MatchesPvgSubcommands(t *testing.T) {
 	tests := []struct {

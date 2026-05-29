@@ -56,18 +56,32 @@ var invalidFlagsForNonArchive = map[string]string{
 	"--output": "Only nd archive supports --output. For other commands, use --json for JSON output.",
 }
 
-// ndCmdPattern matches `nd <subcommand>` in command position:
-// bare command, after pipes/&&/;/$(), or after another command like `pvg nd`.
-// Requires whitespace or start-of-string before "nd" to avoid matching
-// "nd" inside paths (e.g., /workspace/nd) or words (find, and, send).
-var ndCmdPattern = regexp.MustCompile(`(?:^|[\s;|&(])nd\s+(\S+)`)
+// ndCmdPattern matches `nd <subcommand>` only when `nd` is in command
+// position: at the start of the command, or immediately after a shell control
+// operator (`;`, `|`, `&`, `(`, or `$(`), optionally separated by spaces/tabs.
+//
+// A bare space or newline is deliberately NOT a boundary. That way `nd`
+// appearing inside a quoted string, a comment, a heredoc or commit message, or
+// as an argument to another command (`echo "... nd release"`, `grep "nd foo"`,
+// `command -v nd`, `/path/to/nd`) is not misread as an nd invocation. The
+// captured token stops at the next whitespace or shell metacharacter so a
+// trailing `)`, `>`, etc. is not swallowed into the subcommand name.
+var ndCmdPattern = regexp.MustCompile(`(?:^|[;|&(])[ \t]*nd[ \t]+([^\s;|&()<>]+)`)
 
 // pvgNDPattern matches `pvg nd <subcommand>` -- these are pvg subcommands
 // routed through pvg's own command tree, not bare nd commands.
 var pvgNDPattern = regexp.MustCompile(`pvg\s+nd\s+(\S+)`)
 
-// ndFlagPattern matches `nd ... --flag` patterns
-var ndFlagPattern = regexp.MustCompile(`nd\s+[^|;&]*?(--\S+)`)
+// ndFlagPattern matches `nd ... --flag`, anchored to a command-position `nd`
+// (same boundary rules as ndCmdPattern) so flags mentioned inside strings or
+// other commands are not flagged.
+var ndFlagPattern = regexp.MustCompile(`(?:^|[;|&(])[ \t]*nd[ \t]+[^|;&\n]*?(--\S+)`)
+
+// subcmdShape matches a plausible nd subcommand token: a lowercase identifier
+// optionally containing digits, hyphens, or underscores. Tokens that are not
+// subcommand-shaped (punctuation, redirections, `===`, `stack:`) are never
+// treated as subcommands.
+var subcmdShape = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 var guardCmd = &cobra.Command{
 	Use:    "guard",
@@ -101,34 +115,8 @@ var guardCmd = &cobra.Command{
 		// Build the set of valid subcommands from the cobra command tree.
 		validCmds := buildValidCommandSet(rootCmd)
 
-		// Collect pvg nd subcommands -- these are routed by pvg, not bare nd,
-		// and may include pvg-specific subcommands (root, stats, etc.).
-		pvgSubcmds := make(map[string]bool)
-		for _, pm := range pvgNDPattern.FindAllStringSubmatch(bash.Command, -1) {
-			pvgSubcmds[pm[1]] = true
-		}
-
-		// Find all nd subcommands in the bash command.
-		matches := ndCmdPattern.FindAllStringSubmatch(bash.Command, -1)
-
-		seen := make(map[string]bool)
-		for _, match := range matches {
-			subcmd := strings.TrimLeft(match[1], "-")
-			if subcmd == "" || strings.HasPrefix(match[1], "-") {
-				// It's a flag (like nd --version), not a subcommand. Skip.
-				continue
-			}
-			if seen[subcmd] {
-				continue
-			}
-			seen[subcmd] = true
-
-			// Skip subcommands that are part of a `pvg nd` invocation --
-			// pvg routes its own subcommands (root, stats, etc.).
-			if pvgSubcmds[subcmd] {
-				continue
-			}
-
+		// Validate each command-position nd subcommand.
+		for _, subcmd := range extractNDSubcommands(bash.Command) {
 			if !validCmds[subcmd] {
 				suggestion := ""
 				if correct, ok := knownCorrections[subcmd]; ok {
@@ -162,6 +150,36 @@ var guardCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// extractNDSubcommands returns the bare-nd subcommand names in a shell command
+// that the guard should validate. It ignores flags, pvg-routed subcommands
+// (handled by pvg's own command tree), tokens that are not subcommand-shaped,
+// and duplicates. Order of first appearance is preserved.
+func extractNDSubcommands(command string) []string {
+	// pvg nd <subcommand> is routed by pvg, not bare nd -- collect those to skip.
+	pvgSubcmds := make(map[string]bool)
+	for _, pm := range pvgNDPattern.FindAllStringSubmatch(command, -1) {
+		pvgSubcmds[pm[1]] = true
+	}
+
+	var subcmds []string
+	seen := make(map[string]bool)
+	for _, match := range ndCmdPattern.FindAllStringSubmatch(command, -1) {
+		token := match[1]
+		if strings.HasPrefix(token, "-") {
+			continue // a flag (e.g. nd --version), not a subcommand
+		}
+		if !subcmdShape.MatchString(token) {
+			continue // punctuation, redirection, etc. -- not a subcommand
+		}
+		if seen[token] || pvgSubcmds[token] {
+			continue
+		}
+		seen[token] = true
+		subcmds = append(subcmds, token)
+	}
+	return subcmds
 }
 
 // buildValidCommandSet returns the set of valid top-level nd subcommand names
