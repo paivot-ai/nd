@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
@@ -33,11 +32,7 @@ var commentsAddCmd = &cobra.Command{
 			return fmt.Errorf("issue %s not found: %w", id, err)
 		}
 
-		now := time.Now().UTC().Format(time.RFC3339)
-		author := s.Config().CreatedBy
-		comment := fmt.Sprintf("\n### %s %s\n%s\n", now, author, text)
-
-		if err := s.Vault().Append(id, comment, false); err != nil {
+		if err := s.AddComment(id, text); err != nil {
 			return fmt.Errorf("append comment: %w", err)
 		}
 

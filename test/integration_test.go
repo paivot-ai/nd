@@ -980,3 +980,79 @@ func idsOf(issues []*model.Issue) []string {
 	}
 	return ids
 }
+
+// Doctor invariant: every body-mutating operation must leave content_hash
+// matching the body, otherwise nd doctor reports drift. Exercises the full
+// lifecycle against real vault files.
+func TestContentHashConsistencyThroughWorkflow(t *testing.T) {
+	dir := t.TempDir()
+
+	s, err := store.Init(dir, "INT", "hash-tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	assertHash := func(step, id string) {
+		t.Helper()
+		issue, err := s.ReadIssue(id)
+		if err != nil {
+			t.Fatalf("%s: read: %v", step, err)
+		}
+		if got, want := issue.ContentHash, enforce.ComputeContentHash(issue.Body); got != want {
+			t.Errorf("%s: content hash stale (stored %s, computed %s)", step, got, want)
+		}
+	}
+
+	a, err := s.CreateIssue("Task A", "first", "task", 1, "", nil, "")
+	if err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	b, err := s.CreateIssue("Task B", "second", "task", 1, "", nil, "")
+	if err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+	assertHash("create", a.ID)
+
+	if err := s.AddDependency(b.ID, a.ID); err != nil {
+		t.Fatalf("dep: %v", err)
+	}
+	assertHash("dep add (issue)", b.ID)
+	assertHash("dep add (blocker)", a.ID)
+
+	if err := s.UpdateStatus(a.ID, model.StatusInProgress); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	assertHash("status change", a.ID)
+
+	if err := s.AppendNotes(a.ID, "a note"); err != nil {
+		t.Fatalf("notes: %v", err)
+	}
+	assertHash("append notes", a.ID)
+
+	if err := s.AddComment(a.ID, "a comment"); err != nil {
+		t.Fatalf("comment: %v", err)
+	}
+	assertHash("add comment", a.ID)
+
+	if err := s.UpdateDescription(a.ID, "rewritten"); err != nil {
+		t.Fatalf("description: %v", err)
+	}
+	assertHash("update description", a.ID)
+
+	if err := s.CloseIssue(a.ID, "done"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	assertHash("close", a.ID)
+	assertHash("close unblocks dependent", b.ID)
+
+	if err := s.ReopenIssue(a.ID); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	assertHash("reopen", a.ID)
+
+	if err := s.RemoveDependency(b.ID, a.ID); err != nil {
+		t.Fatalf("dep remove: %v", err)
+	}
+	assertHash("dep remove (issue)", b.ID)
+	assertHash("dep remove (blocker)", a.ID)
+}

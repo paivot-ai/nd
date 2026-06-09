@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/paivot-ai/nd/internal/model"
 	"github.com/paivot-ai/nd/internal/store"
@@ -209,10 +208,7 @@ var updateCmd = &cobra.Command{
 
 		if cmd.Flags().Changed("comment") {
 			v, _ := cmd.Flags().GetString("comment")
-			now := time.Now().UTC().Format(time.RFC3339)
-			author := s.Config().CreatedBy
-			comment := fmt.Sprintf("\n### %s %s\n%s\n", now, author, v)
-			if err := s.Vault().Append(id, comment, false); err != nil {
+			if err := s.AddComment(id, v); err != nil {
 				return fmt.Errorf("append comment: %w", err)
 			}
 			changed = true

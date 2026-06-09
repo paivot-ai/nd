@@ -118,13 +118,94 @@ func (s *Store) ReopenIssue(id string) error {
 	return nil
 }
 
-// AppendNotes appends text to the Notes section.
+// AppendNotes appends text to the Notes section. Self-heals issues that lack
+// the ## Notes section (e.g. imported from other trackers).
 func (s *Store) AppendNotes(id, content string) error {
-	return s.vault.Patch(id, vlt.PatchOptions{
-		Heading:    "## Notes",
-		Content:    content + "\n",
+	if err := s.ensureSection(id, "## Notes", "\n## History\n"); err != nil {
+		return err
+	}
+	if err := s.appendToSection(id, "## Notes", content); err != nil {
+		return err
+	}
+	return s.touchUpdatedAt(id)
+}
+
+// appendToSection appends content to the end of a section and recomputes the
+// content hash. vlt.Patch with a Heading replaces the section body wholesale,
+// so the existing content must be read first and the new content merged in
+// after it.
+func (s *Store) appendToSection(id, heading, content string) error {
+	res, err := s.vault.Read(id, heading)
+	if err != nil {
+		return err
+	}
+
+	// Read returns the heading line plus section content; drop the heading.
+	existing := ""
+	if idx := strings.Index(res.Content, "\n"); idx >= 0 {
+		existing = strings.TrimRight(res.Content[idx+1:], "\n")
+	}
+
+	merged := content
+	if strings.TrimSpace(existing) != "" {
+		merged = existing + "\n" + content
+	}
+
+	if err := s.vault.Patch(id, vlt.PatchOptions{
+		Heading:    heading,
+		Content:    merged + "\n",
 		Timestamps: false,
-	})
+	}); err != nil {
+		return err
+	}
+	return s.RecomputeContentHash(id)
+}
+
+// ensureSection inserts an empty section into the body when missing: before
+// anchor when the anchor exists, otherwise at the end of the body.
+func (s *Store) ensureSection(id, heading, anchor string) error {
+	issue, err := s.ReadIssue(id)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(issue.Body, "\n"+heading+"\n") || strings.HasPrefix(issue.Body, heading+"\n") {
+		return nil
+	}
+
+	var newBody string
+	if idx := strings.Index(issue.Body, anchor); idx >= 0 {
+		newBody = issue.Body[:idx] + "\n" + heading + "\n\n" + issue.Body[idx:]
+	} else {
+		newBody = strings.TrimRight(issue.Body, "\n") + "\n\n" + heading + "\n"
+	}
+	return s.vault.Write(id, newBody, false)
+}
+
+// RecomputeContentHash re-reads the body and stores its hash. Must be called
+// after any mutation of the issue body that bypasses UpdateDescription,
+// UpdateBody, or UpdateLinksSection, otherwise nd doctor reports drift.
+func (s *Store) RecomputeContentHash(id string) error {
+	issue, err := s.ReadIssue(id)
+	if err != nil {
+		return err
+	}
+	hash := enforce.ComputeContentHash(issue.Body)
+	return s.vault.PropertySet(id, "content_hash", fmt.Sprintf("%q", hash))
+}
+
+// AddComment appends a timestamped, attributed comment to the issue body and
+// keeps content hash and updated_at in sync. The ## Comments section is the
+// last section of the body, so appending to the file lands inside it.
+func (s *Store) AddComment(id, text string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	comment := fmt.Sprintf("\n### %s %s\n%s\n", now, s.config.CreatedBy, text)
+	if err := s.vault.Append(id, comment, false); err != nil {
+		return err
+	}
+	if err := s.RecomputeContentHash(id); err != nil {
+		return err
+	}
+	return s.touchUpdatedAt(id)
 }
 
 // UpdateDescription replaces the content of the Description section while
@@ -138,12 +219,7 @@ func (s *Store) UpdateDescription(id, description string) error {
 		return err
 	}
 
-	updated, err := s.ReadIssue(id)
-	if err != nil {
-		return err
-	}
-	hash := enforce.ComputeContentHash(updated.Body)
-	if err := s.vault.PropertySet(id, "content_hash", fmt.Sprintf("%q", hash)); err != nil {
+	if err := s.RecomputeContentHash(id); err != nil {
 		return err
 	}
 	return s.touchUpdatedAt(id)
@@ -191,12 +267,7 @@ func (s *Store) UpdateLinksSection(id string) error {
 	}
 
 	// Recompute content hash after Links section update.
-	updated, err := s.ReadIssue(id)
-	if err != nil {
-		return err
-	}
-	hash := enforce.ComputeContentHash(updated.Body)
-	return s.vault.PropertySet(id, "content_hash", fmt.Sprintf("%q", hash))
+	return s.RecomputeContentHash(id)
 }
 
 // SetParent sets the parent of an issue and updates the Links section.
@@ -363,26 +434,11 @@ func (s *Store) resumeStatusFromDeferred() model.Status {
 func (s *Store) appendHistory(id, entry string) error {
 	line := fmt.Sprintf("- %s %s", time.Now().UTC().Format(time.RFC3339), entry)
 
-	issue, err := s.ReadIssue(id)
-	if err != nil {
+	if err := s.ensureSection(id, "## History", "\n## Links\n"); err != nil {
 		return err
 	}
 
-	if !strings.Contains(issue.Body, "\n## History\n") {
-		anchor := "\n## Links\n"
-		if idx := strings.Index(issue.Body, anchor); idx >= 0 {
-			newBody := issue.Body[:idx] + "\n## History\n\n" + issue.Body[idx:]
-			if err := s.vault.Write(id, newBody, false); err != nil {
-				return err
-			}
-		}
-	}
-
-	return s.vault.Patch(id, vlt.PatchOptions{
-		Heading:    "## History",
-		Content:    line + "\n",
-		Timestamps: false,
-	})
+	return s.appendToSection(id, "## History", line)
 }
 
 // AppendHistoryEntry appends a timestamped entry to the ## History section (public API).

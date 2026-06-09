@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/paivot-ai/nd/internal/enforce"
 	"github.com/paivot-ai/nd/internal/model"
 )
 
@@ -1164,6 +1165,71 @@ func TestAppendHistory(t *testing.T) {
 	}
 }
 
+func TestAppendNotesPreservesExistingNotes(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	issue, err := s.CreateIssue("Test", "desc", "task", 2, "", nil, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := s.AppendNotes(issue.ID, "first note"); err != nil {
+		t.Fatalf("AppendNotes first: %v", err)
+	}
+	if err := s.AppendNotes(issue.ID, "second note"); err != nil {
+		t.Fatalf("AppendNotes second: %v", err)
+	}
+
+	read, err := s.ReadIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(read.Body, "first note\nsecond note") {
+		t.Errorf("notes should accumulate in order:\n%s", read.Body)
+	}
+	if !strings.Contains(read.Body, "## Description\ndesc\n") {
+		t.Errorf("description section should be untouched:\n%s", read.Body)
+	}
+}
+
+func TestAppendHistoryAccumulatesEntries(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	issue, err := s.CreateIssue("Test", "", "task", 2, "", nil, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := s.AppendHistoryEntry(issue.ID, "first entry"); err != nil {
+		t.Fatalf("AppendHistoryEntry first: %v", err)
+	}
+	if err := s.AppendHistoryEntry(issue.ID, "second entry"); err != nil {
+		t.Fatalf("AppendHistoryEntry second: %v", err)
+	}
+
+	read, err := s.ReadIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(read.Body, "first entry") {
+		t.Errorf("first history entry should survive later appends:\n%s", read.Body)
+	}
+	if !strings.Contains(read.Body, "second entry") {
+		t.Errorf("second history entry should be present:\n%s", read.Body)
+	}
+	if first, second := strings.Index(read.Body, "first entry"), strings.Index(read.Body, "second entry"); first > second {
+		t.Errorf("history entries should be in chronological order:\n%s", read.Body)
+	}
+}
+
 func TestAppendHistorySelfHealing(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Init(dir, "TST", "tester")
@@ -1200,6 +1266,66 @@ func TestAppendHistorySelfHealing(t *testing.T) {
 	}
 	if !strings.Contains(read3.Body, "healed entry") {
 		t.Errorf("body should contain healed entry:\n%s", read3.Body)
+	}
+}
+
+func TestAppendNotesSelfHealing(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	issue, err := s.CreateIssue("Test", "", "task", 2, "", nil, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Remove ## Notes section to simulate an issue imported from another tracker.
+	read, _ := s.ReadIssue(issue.ID)
+	newBody := strings.Replace(read.Body, "\n## Notes\n\n", "", 1)
+	if err := s.vault.Write(issue.ID, newBody, false); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := s.AppendNotes(issue.ID, "healed note"); err != nil {
+		t.Fatalf("AppendNotes: %v", err)
+	}
+
+	read2, _ := s.ReadIssue(issue.ID)
+	if !strings.Contains(read2.Body, "\n## Notes\n") {
+		t.Errorf("## Notes should be self-healed:\n%s", read2.Body)
+	}
+	if !strings.Contains(read2.Body, "healed note") {
+		t.Errorf("body should contain healed note:\n%s", read2.Body)
+	}
+	if notesIdx, histIdx := strings.Index(read2.Body, "## Notes"), strings.Index(read2.Body, "## History"); notesIdx > histIdx {
+		t.Errorf("## Notes should be re-inserted before ## History:\n%s", read2.Body)
+	}
+}
+
+func TestAddCommentUpdatesHashAndTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Init(dir, "TST", "tester")
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	issue, err := s.CreateIssue("Test", "desc", "task", 2, "", nil, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := s.AddComment(issue.ID, "a comment"); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+
+	read, _ := s.ReadIssue(issue.ID)
+	if !strings.Contains(read.Body, "a comment") {
+		t.Errorf("body should contain the comment:\n%s", read.Body)
+	}
+	if read.ContentHash != enforce.ComputeContentHash(read.Body) {
+		t.Error("content hash should be recomputed after AddComment")
 	}
 }
 

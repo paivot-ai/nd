@@ -85,6 +85,7 @@ var migrateCmd = &cobra.Command{
 
 		imported, skipped := 0, 0
 		var deps []depRecord
+		origUpdatedAt := map[string]string{}
 
 		// Pass 1: Create all issues and collect dependencies.
 		for scanner.Scan() {
@@ -158,7 +159,10 @@ var migrateCmd = &cobra.Command{
 						reason, _ := raw["close_reason"].(string)
 						_ = s.CloseIssue(issue.ID, normalizeMarkdown(reason))
 						if closedAt != "" {
-							_ = s.UpdateField(issue.ID, "closed_at", closedAt)
+							// PropertySet, not UpdateField: UpdateField would
+							// touch updated_at. closed_at must be set in this
+							// pass because Pass 3 sorts by it.
+							_ = s.Vault().PropertySet(issue.ID, "closed_at", closedAt)
 						}
 					default:
 						_ = s.UpdateField(issue.ID, "status", status)
@@ -176,12 +180,14 @@ var migrateCmd = &cobra.Command{
 				}
 			}
 
-			// Preserve original timestamps if available.
+			// Preserve created_at now; updated_at is restored at the end of
+			// the import because every later pass (notes, sections, dependency
+			// wiring, epic promotion) touches it.
 			if createdAt, ok := raw["created_at"].(string); ok && createdAt != "" {
-				_ = s.UpdateField(issue.ID, "created_at", createdAt)
+				_ = s.Vault().PropertySet(issue.ID, "created_at", createdAt)
 			}
 			if updatedAt, ok := raw["updated_at"].(string); ok && updatedAt != "" {
-				_ = s.UpdateField(issue.ID, "updated_at", updatedAt)
+				origUpdatedAt[issue.ID] = updatedAt
 			}
 
 			// Import notes (normalized).
@@ -189,20 +195,27 @@ var migrateCmd = &cobra.Command{
 				_ = s.AppendNotes(issue.ID, normalizeMarkdown(notes))
 			}
 
-			// Import design (normalized).
+			// Import design and acceptance criteria (normalized). These patch
+			// the body directly, so the content hash is refreshed after.
+			sectionPatched := false
 			if design, ok := raw["design"].(string); ok && design != "" {
 				_ = s.Vault().Patch(issue.ID, vlt.PatchOptions{
 					Heading: "## Design",
 					Content: normalizeMarkdown(design) + "\n",
 				})
+				sectionPatched = true
 			}
 
-			// Import acceptance criteria (normalized).
 			if ac, ok := raw["acceptance_criteria"].(string); ok && ac != "" {
 				_ = s.Vault().Patch(issue.ID, vlt.PatchOptions{
 					Heading: "## Acceptance Criteria",
 					Content: normalizeMarkdown(ac) + "\n",
 				})
+				sectionPatched = true
+			}
+
+			if sectionPatched {
+				_ = s.RecomputeContentHash(issue.ID)
 			}
 
 			// Import defer_until.
@@ -522,6 +535,12 @@ var migrateCmd = &cobra.Command{
 					promoted++
 				}
 			}
+		}
+
+		// Restore original updated_at timestamps last: every pass above
+		// touches updated_at and would clobber the imported values.
+		for id, ts := range origUpdatedAt {
+			_ = s.Vault().PropertySet(id, "updated_at", ts)
 		}
 
 		fmt.Printf("Migrated %d issues (%d skipped)\n", imported, skipped)
