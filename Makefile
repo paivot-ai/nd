@@ -35,6 +35,13 @@ m['plugins'][0]['version'] = '$(v)'; \
 f = open('$(PLUGIN_SRC)/.claude-plugin/marketplace.json','w'); \
 json.dump(m, f, indent=2); f.write('\n'); f.close(); \
 print('OK: marketplace.json -> $(v)')"
+	@python3 -c "\
+import json; \
+m = json.load(open('.claude-plugin/marketplace.json')); \
+m['plugins'][0]['version'] = '$(v)'; \
+f = open('.claude-plugin/marketplace.json','w'); \
+json.dump(m, f, indent=2); f.write('\n'); f.close(); \
+print('OK: root marketplace.json -> $(v)')"
 	@echo "Manifests synced to $(v). Commit, then tag v$(v)."
 
 build: ## Build nd binary

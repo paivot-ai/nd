@@ -9,9 +9,32 @@ permissions:
   contents: write
 
 jobs:
+  manifest-versions:
+    name: Verify manifest versions match tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Assert plugin manifests match release tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          plugin=$(python3 -c "import json; print(json.load(open('nd-skill/.claude-plugin/plugin.json'))['version'])")
+          skill_mkt=$(python3 -c "import json; print(json.load(open('nd-skill/.claude-plugin/marketplace.json'))['plugins'][0]['version'])")
+          root_mkt=$(python3 -c "import json; print(json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'])")
+          echo "tag=$tag plugin.json=$plugin nd-skill/marketplace.json=$skill_mkt root/marketplace.json=$root_mkt"
+          fail=0
+          [ "$plugin" = "$tag" ] || { echo "ERROR: nd-skill/.claude-plugin/plugin.json version ($plugin) != tag ($tag)"; fail=1; }
+          [ "$skill_mkt" = "$tag" ] || { echo "ERROR: nd-skill/.claude-plugin/marketplace.json plugins[0].version ($skill_mkt) != tag ($tag)"; fail=1; }
+          [ "$root_mkt" = "$tag" ] || { echo "ERROR: .claude-plugin/marketplace.json plugins[0].version ($root_mkt) != tag ($tag)"; fail=1; }
+          if [ "$fail" -ne 0 ]; then
+            echo "Manifest versions are out of sync with the tag. Run 'make bump v=$tag', commit, and re-tag."
+            exit 1
+          fi
+
   release:
     name: Release
     runs-on: ubuntu-latest
+    needs: manifest-versions
     steps:
       - uses: actions/checkout@v6
         with:

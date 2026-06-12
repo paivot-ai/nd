@@ -65,11 +65,30 @@ nd adds: issue model with validation, collision-resistant ID generation, depende
 
 ## Installation
 
+### Recommended: Paivot installer
+
+If you use [Paivot](https://github.com/paivot-ai/pvg), the one-liner installs and converges nd (binary and Claude Code plugin) along with the rest of the toolchain:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/paivot-ai/pvg/main/install.sh | sh
+```
+
+### Standalone
+
+Download the binary for your platform from the [releases page](https://github.com/paivot-ai/nd/releases), put it on your `PATH`, then install the Claude Code plugin straight from GitHub:
+
+```bash
+claude plugin marketplace add paivot-ai/nd
+claude plugin install nd@nd
+```
+
+### Development (from source)
+
 ```bash
 git clone https://github.com/paivot-ai/nd.git
 cd nd
 make build
-make install    # Installs to ~/go/bin/nd
+make install    # Installs to ~/go/bin/nd and the Claude Code plugin
 ```
 
 Requires Go 1.26+.

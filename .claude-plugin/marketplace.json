@@ -1,0 +1,16 @@
+{
+  "name": "nd",
+  "description": "Vault-backed issue tracker for AI coding workflows",
+  "owner": {
+    "name": "Ramiro Salas",
+    "url": "https://github.com/RamXX"
+  },
+  "plugins": [
+    {
+      "name": "nd",
+      "source": "./nd-skill",
+      "description": "Vault-backed issue tracker for AI coding workflows. Manage tasks, discover work, track dependencies, and maintain persistent context with plain markdown files.",
+      "version": "0.10.20"
+    }
+  ]
+}
