@@ -7,7 +7,7 @@ PLUGIN_SRC      := nd-skill
 PLUGIN_CACHE    := $(HOME)/.claude/plugins/cache/$(PLUGIN_NAME)/$(PLUGIN_NAME)
 SETTINGS_FILE   := $(HOME)/.claude/settings.json
 
-.PHONY: help build test vet install install-plugin install-skill uninstall-plugin clean
+.PHONY: help build test vet install install-plugin install-skill uninstall-plugin clean bump
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -16,6 +16,26 @@ help: ## Show this help
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
 # Strip leading 'v' for plugin directory (v0.6.0 -> 0.6.0)
 PLUGIN_VERSION := $(shell echo $(VERSION) | sed 's/^v//')
+
+bump: ## Bump committed plugin manifests: make bump v=0.10.21 (run BEFORE tagging a release)
+ifndef v
+	$(error Usage: make bump v=X.Y.Z)
+endif
+	@python3 -c "\
+import json; \
+p = json.load(open('$(PLUGIN_SRC)/.claude-plugin/plugin.json')); \
+p['version'] = '$(v)'; \
+f = open('$(PLUGIN_SRC)/.claude-plugin/plugin.json','w'); \
+json.dump(p, f, indent=2); f.write('\n'); f.close(); \
+print('OK: plugin.json -> $(v)')"
+	@python3 -c "\
+import json; \
+m = json.load(open('$(PLUGIN_SRC)/.claude-plugin/marketplace.json')); \
+m['plugins'][0]['version'] = '$(v)'; \
+f = open('$(PLUGIN_SRC)/.claude-plugin/marketplace.json','w'); \
+json.dump(m, f, indent=2); f.write('\n'); f.close(); \
+print('OK: marketplace.json -> $(v)')"
+	@echo "Manifests synced to $(v). Commit, then tag v$(v)."
 
 build: ## Build nd binary
 	go build -ldflags "-X github.com/paivot-ai/nd/cmd.version=$(VERSION)" -o $(BIN) .
