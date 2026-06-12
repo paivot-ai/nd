@@ -8,7 +8,6 @@ import (
 
 	"github.com/paivot-ai/nd/internal/enforce"
 	"github.com/paivot-ai/nd/internal/model"
-	"github.com/paivot-ai/vlt"
 )
 
 // UpdateField updates a single frontmatter field on an issue.
@@ -131,19 +130,20 @@ func (s *Store) AppendNotes(id, content string) error {
 }
 
 // appendToSection appends content to the end of a section and recomputes the
-// content hash. vlt.Patch with a Heading replaces the section body wholesale,
-// so the existing content must be read first and the new content merged in
-// after it.
+// content hash. It operates on the raw issue body and targets the LAST
+// occurrence of the heading: authored story descriptions frequently embed
+// their own "## Notes"/"## History" headings, and nd's canonical structural
+// sections always trail them. Delegating to vlt's heading-targeted Read/Patch
+// would abort on such duplicates ("heading is ambiguous").
 func (s *Store) appendToSection(id, heading, content string) error {
-	res, err := s.vault.Read(id, heading)
+	issue, err := s.ReadIssue(id)
 	if err != nil {
 		return err
 	}
 
-	// Read returns the heading line plus section content; drop the heading.
-	existing := ""
-	if idx := strings.Index(res.Content, "\n"); idx >= 0 {
-		existing = strings.TrimRight(res.Content[idx+1:], "\n")
+	existing, found := sectionContent(issue.Body, heading, true)
+	if !found {
+		return fmt.Errorf("append to %s: heading %q not found", id, heading)
 	}
 
 	merged := content
@@ -151,14 +151,101 @@ func (s *Store) appendToSection(id, heading, content string) error {
 		merged = existing + "\n" + content
 	}
 
-	if err := s.vault.Patch(id, vlt.PatchOptions{
-		Heading:    heading,
-		Content:    merged + "\n",
-		Timestamps: false,
-	}); err != nil {
+	newBody, err := replaceSectionContent(issue.Body, heading, merged+"\n", true)
+	if err != nil {
+		return fmt.Errorf("append to %s: %w", id, err)
+	}
+	if err := s.vault.Write(id, newBody, false); err != nil {
 		return err
 	}
 	return s.RecomputeContentHash(id)
+}
+
+// headingLevel returns the ATX heading level of a line (the number of leading
+// '#' characters followed by a space or end of line), or 0 when the line is
+// not a heading.
+func headingLevel(line string) int {
+	trimmed := strings.TrimSpace(line)
+	level := 0
+	for level < len(trimmed) && trimmed[level] == '#' {
+		level++
+	}
+	if level == 0 {
+		return 0
+	}
+	if level >= len(trimmed) || trimmed[level] == ' ' {
+		return level
+	}
+	return 0
+}
+
+// findSectionBounds locates a markdown section by exact heading-line match.
+// heading must include its "#" prefix (e.g. "## Notes") so the level is
+// explicit. The section spans from the heading line to the line before the
+// next heading of equal or higher level (or EOF). When the heading appears
+// more than once, pickLast selects the trailing occurrence -- correct for
+// nd's canonical structural sections (## Notes, ## History, ## Links), which
+// always trail authored duplicates embedded in the description -- while
+// pickLast=false selects the first occurrence (canonical for ## Description).
+func findSectionBounds(lines []string, heading string, pickLast bool) (headingIdx, contentEnd int, found bool) {
+	level := headingLevel(heading)
+	if level == 0 {
+		return 0, 0, false
+	}
+
+	headingIdx = -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == heading {
+			headingIdx = i
+			if !pickLast {
+				break
+			}
+		}
+	}
+	if headingIdx < 0 {
+		return 0, 0, false
+	}
+
+	contentEnd = len(lines)
+	for i := headingIdx + 1; i < len(lines); i++ {
+		if lvl := headingLevel(lines[i]); lvl > 0 && lvl <= level {
+			contentEnd = i
+			break
+		}
+	}
+	return headingIdx, contentEnd, true
+}
+
+// sectionContent returns the content of the selected section without its
+// heading line, trimmed of trailing newlines.
+func sectionContent(body, heading string, pickLast bool) (string, bool) {
+	lines := strings.Split(body, "\n")
+	headingIdx, contentEnd, found := findSectionBounds(lines, heading, pickLast)
+	if !found {
+		return "", false
+	}
+	return strings.TrimRight(strings.Join(lines[headingIdx+1:contentEnd], "\n"), "\n"), true
+}
+
+// replaceSectionContent replaces the body of the section selected by heading
+// and pickLast with content, keeping the heading line. content is split on
+// newlines and spliced in verbatim; empty content removes the section body.
+// This mirrors vlt.Patch's heading-targeted splice, but resolves duplicate
+// headings deterministically instead of erroring.
+func replaceSectionContent(body, heading, content string, pickLast bool) (string, error) {
+	lines := strings.Split(body, "\n")
+	headingIdx, contentEnd, found := findSectionBounds(lines, heading, pickLast)
+	if !found {
+		return "", fmt.Errorf("heading %q not found", heading)
+	}
+
+	result := make([]string, 0, len(lines))
+	result = append(result, lines[:headingIdx+1]...)
+	if content != "" {
+		result = append(result, strings.Split(content, "\n")...)
+	}
+	result = append(result, lines[contentEnd:]...)
+	return strings.Join(result, "\n"), nil
 }
 
 // ensureSection inserts an empty section into the body when missing: before
@@ -209,13 +296,21 @@ func (s *Store) AddComment(id, text string) error {
 }
 
 // UpdateDescription replaces the content of the Description section while
-// preserving the rest of the issue body.
+// preserving the rest of the issue body. The canonical ## Description is the
+// FIRST occurrence: authored duplicates live inside the description content,
+// after it. Replacement extends only to the next heading of equal or higher
+// level.
 func (s *Store) UpdateDescription(id, description string) error {
-	if err := s.vault.Patch(id, vlt.PatchOptions{
-		Heading:    "## Description",
-		Content:    description + "\n",
-		Timestamps: false,
-	}); err != nil {
+	issue, err := s.ReadIssue(id)
+	if err != nil {
+		return err
+	}
+
+	newBody, err := replaceSectionContent(issue.Body, "## Description", description+"\n", false)
+	if err != nil {
+		return fmt.Errorf("update description on %s: %w", id, err)
+	}
+	if err := s.vault.Write(id, newBody, false); err != nil {
 		return err
 	}
 
@@ -244,6 +339,9 @@ func (s *Store) UpdateBody(id, body string) error {
 }
 
 // UpdateLinksSection rebuilds the ## Links section from frontmatter relationships.
+// The canonical ## Links is the LAST occurrence: authored duplicates live
+// inside the description, before it. The section content is replaced
+// wholesale since it is derived entirely from frontmatter.
 func (s *Store) UpdateLinksSection(id string) error {
 	issue, err := s.ReadIssue(id)
 	if err != nil {
@@ -251,24 +349,20 @@ func (s *Store) UpdateLinksSection(id string) error {
 	}
 
 	content := buildLinksSection(issue)
+	body := issue.Body
 
-	// Check if body already has a ## Links section.
-	if !strings.Contains(issue.Body, "\n## Links\n") {
-		// Insert ## Links before ## Comments.
-		if idx := strings.Index(issue.Body, "\n## Comments\n"); idx >= 0 {
-			newBody := issue.Body[:idx] + "\n## Links\n\n" + issue.Body[idx:]
-			if err := s.vault.Write(id, newBody, false); err != nil {
-				return err
-			}
+	// Self-heal: insert ## Links before ## Comments when missing.
+	if !strings.Contains(body, "\n## Links\n") {
+		if idx := strings.Index(body, "\n## Comments\n"); idx >= 0 {
+			body = body[:idx] + "\n## Links\n\n" + body[idx:]
 		}
 	}
 
-	// Patch the Links section content.
-	if err := s.vault.Patch(id, vlt.PatchOptions{
-		Heading:    "## Links",
-		Content:    content,
-		Timestamps: false,
-	}); err != nil {
+	newBody, err := replaceSectionContent(body, "## Links", content, true)
+	if err != nil {
+		return fmt.Errorf("update links on %s: %w", id, err)
+	}
+	if err := s.vault.Write(id, newBody, false); err != nil {
 		return err
 	}
 
