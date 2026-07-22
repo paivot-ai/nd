@@ -15,7 +15,7 @@ var pathCmd = &cobra.Command{
 	Long:  "Without id: shows all path roots (start of chains). With id: shows the execution chain from that issue.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

@@ -21,7 +21,7 @@ var epicStatusCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ var epicTreeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -103,7 +103,7 @@ var epicCloseEligibleCmd = &cobra.Command{
 	Use:   "close-eligible",
 	Short: "List epics where all children are closed",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

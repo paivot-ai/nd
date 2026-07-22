@@ -64,7 +64,7 @@ var depListCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ var depCyclesCmd = &cobra.Command{
 	Use:   "cycles",
 	Short: "Detect dependency cycles",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ var depTreeCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

@@ -15,7 +15,11 @@ var doctorCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fix, _ := cmd.Flags().GetBool("fix")
 
-		s, err := store.Open(resolveVaultDir())
+		open := store.OpenRead
+		if fix {
+			open = store.Open
+		}
+		s, err := open(resolveVaultDir())
 		if err != nil {
 			return err
 		}

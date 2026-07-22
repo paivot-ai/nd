@@ -36,7 +36,14 @@ var listCmd = &cobra.Command{
 			opts.Limit = 50
 		}
 
-		s, err := store.Open(resolveVaultDir())
+		// Epic scoping filters after listing, so the limit must apply last.
+		epicID, _ := cmd.Flags().GetString("epic")
+		limit := opts.Limit
+		if epicID != "" {
+			opts.Limit = 0
+		}
+
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -45,6 +52,14 @@ var listCmd = &cobra.Command{
 		issues, err := s.ListIssues(opts)
 		if err != nil {
 			return err
+		}
+
+		issues, err = applyEpicScope(cmd, s, issues)
+		if err != nil {
+			return err
+		}
+		if epicID != "" && limit > 0 && len(issues) > limit {
+			issues = issues[:limit]
 		}
 
 		if jsonOut {

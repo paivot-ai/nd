@@ -16,7 +16,7 @@ var searchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
 
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

@@ -34,7 +34,7 @@ Supports the same filter flags as 'nd list' for scoping results
 		opts.Reverse = false
 		opts.Limit = 0
 
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
@@ -52,6 +52,11 @@ Supports the same filter flags as 'nd list' for scoping results
 
 		// Now apply the user's filters to the ready set.
 		ready = filterIssues(s, ready, opts)
+
+		ready, err = applyEpicScope(cmd, s, ready)
+		if err != nil {
+			return err
+		}
 
 		store.SortIssues(ready, sortBy, reverse)
 

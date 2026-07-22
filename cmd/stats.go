@@ -15,7 +15,7 @@ var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show project statistics",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

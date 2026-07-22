@@ -24,6 +24,50 @@ var rootCmd = &cobra.Command{
 	Long:         "nd -- Git-native issue tracking with Obsidian-compatible markdown files.",
 	Version:      version,
 	SilenceUsage: true,
+	// After any successful mutating command, snapshot the vault to the
+	// backlog branch (best effort, disabled via sync.auto=off or
+	// ND_SYNC_AUTO=off). This keeps the branch a continuous journal: a wiped
+	// vault loses at most the current command.
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if mutatingCommandPaths[cmd.CommandPath()] {
+			autoSnapshot(cmd.CommandPath())
+		}
+	},
+}
+
+// mutatingCommandPaths lists the command paths whose success changes vault
+// state and therefore warrants an auto-snapshot. Read-only commands and sync
+// itself are deliberately absent.
+var mutatingCommandPaths = map[string]bool{
+	"nd init":         true,
+	"nd create":       true,
+	"nd q":            true,
+	"nd update":       true,
+	"nd edit":         true,
+	"nd close":        true,
+	"nd reopen":       true,
+	"nd defer":        true,
+	"nd undefer":      true,
+	"nd delete":       true,
+	"nd migrate":      true,
+	"nd import":       true,
+	"nd claim":        true,
+	"nd release":      true,
+	"nd start":        true,
+	"nd block":        true,
+	"nd unblock":      true,
+	"nd resolve":      true,
+	"nd dep add":      true,
+	"nd dep rm":       true,
+	"nd dep relate":   true,
+	"nd dep unrelate": true,
+	"nd labels add":   true,
+	"nd labels rm":    true,
+	"nd comments add": true,
+	"nd comment add":  true,
+	"nd config set":   true,
+	"nd doctor":       true, // no-op snapshot unless --fix changed something
+	"nd archive":      true, // mutates only with --remove-archived; no-op otherwise
 }
 
 func Execute() {

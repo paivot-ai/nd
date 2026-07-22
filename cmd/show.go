@@ -17,7 +17,7 @@ var showCmd = &cobra.Command{
 		id := args[0]
 		short, _ := cmd.Flags().GetBool("short")
 
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

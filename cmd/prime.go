@@ -14,7 +14,7 @@ var primeCmd = &cobra.Command{
 	Use:   "prime",
 	Short: "Output AI context summary",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

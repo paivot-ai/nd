@@ -22,7 +22,7 @@ func gitignoreEntries(trackIssues bool) []string {
 	if trackIssues {
 		entries = append(entries, "# Tracked mode keeps .nd.yaml and issues/ in git")
 	} else {
-		entries = append(entries, "# Default mode keeps .nd.yaml and issues/ local; use `nd init --track-issues` to track them in git")
+		entries = append(entries, "# Default mode keeps .nd.yaml and issues/ out of code branches; `nd sync` persists them on the backlog branch")
 		entries = append(entries, ".nd.yaml", "issues/")
 	}
 	return append(entries,
@@ -35,8 +35,29 @@ func gitignoreEntries(trackIssues bool) []string {
 	)
 }
 
-// EnsureGitignore idempotently adds any missing entries to the vault's .gitignore.
-// It creates the file if it does not exist. Safe to call on every Open.
+// staleGitignoreEntries returns lines that must NOT appear for the given
+// mode. Switching a vault between tracked and untracked modes must remove the
+// other mode's entries, otherwise tracked mode silently keeps ignoring the
+// backlog.
+func staleGitignoreEntries(trackIssues bool) []string {
+	if trackIssues {
+		return []string{
+			".nd.yaml",
+			"issues/",
+			"# Default mode keeps .nd.yaml and issues/ local; use `nd init --track-issues` to track them in git",
+			"# Default mode keeps .nd.yaml and issues/ out of code branches; `nd sync` persists them on the backlog branch",
+		}
+	}
+	return []string{
+		"# Tracked mode keeps .nd.yaml and issues/ in git",
+		// Pre-sync wording, replaced by the sync-aware comment line.
+		"# Default mode keeps .nd.yaml and issues/ local; use `nd init --track-issues` to track them in git",
+	}
+}
+
+// EnsureGitignore reconciles the vault's .gitignore with the current mode:
+// missing entries are added and entries belonging to the opposite
+// tracked/untracked mode are removed. Safe to call on every Open.
 func (s *Store) EnsureGitignore() error {
 	return ensureGitignore(s.dir, s.config.TrackIssues)
 }
@@ -44,11 +65,13 @@ func (s *Store) EnsureGitignore() error {
 func ensureGitignore(dir string, trackIssues bool) error {
 	path := filepath.Join(dir, ".gitignore")
 
+	var lines []string
 	existing := make(map[string]bool)
 	f, err := os.Open(path)
 	if err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
 			existing[scanner.Text()] = true
 		}
 		f.Close()
@@ -59,34 +82,51 @@ func ensureGitignore(dir string, trackIssues bool) error {
 		return fmt.Errorf("open .gitignore: %w", err)
 	}
 
+	stale := make(map[string]bool)
+	for _, entry := range staleGitignoreEntries(trackIssues) {
+		stale[entry] = true
+	}
+
+	removed := false
+	kept := lines[:0:0]
+	for _, line := range lines {
+		if stale[line] {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+
 	var missing []string
 	for _, entry := range gitignoreEntries(trackIssues) {
 		if !existing[entry] {
 			missing = append(missing, entry)
 		}
 	}
-	if len(missing) == 0 {
+	if len(missing) == 0 && !removed {
 		return nil // nothing to do
 	}
 
-	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("open .gitignore for append: %w", err)
+	if len(kept) > 0 && len(missing) > 0 {
+		kept = append(kept, "")
 	}
-	defer out.Close()
+	kept = append(kept, missing...)
 
-	// Add a newline separator if the file already had content.
-	if len(existing) > 0 {
-		if _, err := out.WriteString("\n"); err != nil {
-			return err
-		}
+	content := strings.Join(kept, "\n") + "\n"
+	tmp, err := os.CreateTemp(dir, ".gitignore.tmp-*")
+	if err != nil {
+		return fmt.Errorf("write .gitignore: %w", err)
 	}
-	for _, entry := range missing {
-		if _, err := out.WriteString(entry + "\n"); err != nil {
-			return err
-		}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
 	}
-	return nil
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // Config holds vault-level nd configuration stored in .nd.yaml.
@@ -99,6 +139,9 @@ type Config struct {
 	StatusSequence  string `yaml:"status_sequence,omitempty"`
 	StatusFSM       bool   `yaml:"status_fsm,omitempty"`
 	StatusExitRules string `yaml:"status_exit_rules,omitempty"`
+	SyncBranch      string `yaml:"sync_branch,omitempty"`
+	SyncRemote      string `yaml:"sync_remote,omitempty"`
+	SyncAuto        string `yaml:"sync_auto,omitempty"` // "", "on" = auto-snapshot after mutations; "off" disables
 }
 
 type InitOptions struct {
@@ -120,7 +163,7 @@ type Store struct {
 func Open(dir string) (*Store, error) {
 	unlock, err := vlt.LockVault(dir, true)
 	if err != nil {
-		return nil, fmt.Errorf("lock vault: %w", err)
+		return nil, lockError(dir, err)
 	}
 
 	v, err := vlt.Open(dir)
@@ -136,6 +179,36 @@ func Open(dir string) (*Store, error) {
 	// Ensure existing vaults have a complete .gitignore.
 	_ = s.EnsureGitignore()
 	return s, nil
+}
+
+// OpenRead opens an existing nd vault with a shared advisory lock. Multiple
+// readers proceed concurrently; only writers (Open) exclude them. vlt's
+// atomic temp-file + rename writes guarantee a reader never sees a torn file.
+// Callers must not mutate the vault through a read-mode store.
+func OpenRead(dir string) (*Store, error) {
+	unlock, err := vlt.LockVault(dir, false)
+	if err != nil {
+		return nil, lockError(dir, err)
+	}
+
+	v, err := vlt.Open(dir)
+	if err != nil {
+		unlock()
+		return nil, fmt.Errorf("open vault: %w", err)
+	}
+	s := &Store{vault: v, dir: dir, unlock: unlock}
+	if err := s.loadConfig(); err != nil {
+		unlock()
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	return s, nil
+}
+
+// lockError wraps a lock acquisition failure with actionable context: lock
+// contention is expected under multi-agent parallelism and callers should
+// retry rather than conclude the vault is broken.
+func lockError(dir string, err error) error {
+	return fmt.Errorf("vault %s is busy (another nd/vlt process holds the lock; retry, or raise VLT_LOCK_TIMEOUT): %w", dir, err)
 }
 
 // Close releases the advisory file lock. Safe to call multiple times.
@@ -228,6 +301,33 @@ func (s *Store) StatusSequence() []model.Status {
 // Format: "blocked:open,in_progress,deferred;deferred:open,in_progress,deferred"
 func (s *Store) ExitRules() map[model.Status][]model.Status {
 	return parseExitRules(s.config.StatusExitRules)
+}
+
+// SyncBranch returns the configured backlog branch, defaulting to nd/backlog.
+func (s *Store) SyncBranch() string {
+	if s.config.SyncBranch != "" {
+		return s.config.SyncBranch
+	}
+	return "nd/backlog"
+}
+
+// SyncRemote returns the configured sync remote, defaulting to origin.
+func (s *Store) SyncRemote() string {
+	if s.config.SyncRemote != "" {
+		return s.config.SyncRemote
+	}
+	return "origin"
+}
+
+// SyncAutoEnabled reports whether mutations should auto-snapshot to the
+// backlog branch. Enabled by default; disable with `nd config set sync.auto
+// off` or the ND_SYNC_AUTO=off environment variable (checked by the CLI).
+func (s *Store) SyncAutoEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(s.config.SyncAuto)) {
+	case "off", "false", "0", "no":
+		return false
+	}
+	return true
 }
 
 func parseExitRules(raw string) map[model.Status][]model.Status {
@@ -343,6 +443,43 @@ func (s *Store) SetConfigValue(key, value string) error {
 			return fmt.Errorf("invalid boolean value %q for status.fsm", value)
 		}
 
+	case "sync.branch":
+		if strings.ContainsAny(value, " \t~^:?*[\\") || strings.HasPrefix(value, "-") {
+			return fmt.Errorf("invalid branch name %q", value)
+		}
+		s.config.SyncBranch = value
+
+	case "sync.remote":
+		if strings.ContainsAny(value, " \t") {
+			return fmt.Errorf("invalid remote name %q", value)
+		}
+		s.config.SyncRemote = value
+
+	case "sync.auto":
+		switch strings.ToLower(value) {
+		case "on", "true", "1", "yes", "":
+			s.config.SyncAuto = "on"
+		case "off", "false", "0", "no":
+			s.config.SyncAuto = "off"
+		default:
+			return fmt.Errorf("invalid value %q for sync.auto: use on or off", value)
+		}
+
+	case "track_issues":
+		switch strings.ToLower(value) {
+		case "true", "1", "yes", "on":
+			s.config.TrackIssues = true
+		case "false", "0", "no", "off":
+			s.config.TrackIssues = false
+		default:
+			return fmt.Errorf("invalid boolean value %q for track_issues", value)
+		}
+		if err := s.SaveConfig(); err != nil {
+			return err
+		}
+		// Reconcile .gitignore immediately so the mode switch takes effect.
+		return s.EnsureGitignore()
+
 	case "status.exit_rules":
 		if value != "" {
 			custom := s.CustomStatuses()
@@ -399,6 +536,20 @@ func (s *Store) GetConfigValue(key string) (string, error) {
 		return "false", nil
 	case "status.exit_rules":
 		return s.config.StatusExitRules, nil
+	case "sync.branch":
+		return s.SyncBranch(), nil
+	case "sync.remote":
+		return s.SyncRemote(), nil
+	case "sync.auto":
+		if s.SyncAutoEnabled() {
+			return "on", nil
+		}
+		return "off", nil
+	case "track_issues":
+		if s.config.TrackIssues {
+			return "true", nil
+		}
+		return "false", nil
 	default:
 		return "", fmt.Errorf("unknown config key %q", key)
 	}
@@ -410,13 +561,25 @@ func (s *Store) ConfigEntries() [][2]string {
 	if s.config.StatusFSM {
 		fsm = "true"
 	}
+	syncAuto := "on"
+	if !s.SyncAutoEnabled() {
+		syncAuto = "off"
+	}
+	track := "false"
+	if s.config.TrackIssues {
+		track = "true"
+	}
 	return [][2]string{
 		{"version", s.config.Version},
 		{"prefix", s.config.Prefix},
 		{"created_by", s.config.CreatedBy},
+		{"track_issues", track},
 		{"status.custom", s.config.StatusCustom},
 		{"status.sequence", s.config.StatusSequence},
 		{"status.fsm", fsm},
 		{"status.exit_rules", s.config.StatusExitRules},
+		{"sync.branch", s.SyncBranch()},
+		{"sync.remote", s.SyncRemote()},
+		{"sync.auto", syncAuto},
 	}
 }

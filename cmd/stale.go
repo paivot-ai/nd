@@ -17,7 +17,7 @@ var staleCmd = &cobra.Command{
 		days, _ := cmd.Flags().GetInt("days")
 		cutoff := time.Now().UTC().AddDate(0, 0, -days)
 
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

@@ -15,7 +15,7 @@ var blockedCmd = &cobra.Command{
 	Use:   "blocked",
 	Short: "Show blocked issues",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

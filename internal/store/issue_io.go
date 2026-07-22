@@ -261,6 +261,24 @@ func (s *Store) DeleteIssue(id string, permanent bool) ([]string, error) {
 	return modified, nil
 }
 
+// ParseIssueMarkdown parses raw issue file content (frontmatter + body) into
+// an Issue. Exported for consumers that read issue content outside a vault,
+// such as the git sync merge engine.
+func ParseIssueMarkdown(content string) (*model.Issue, error) {
+	return deserializeIssue(content)
+}
+
+// SerializeIssueMarkdown renders an issue to frontmatter + body markdown.
+func SerializeIssueMarkdown(issue *model.Issue) string {
+	return serializeIssue(issue)
+}
+
+// BuildLinksSection generates the ## Links content from an issue's
+// relationship fields. Empty when the issue has no relationships.
+func BuildLinksSection(issue *model.Issue) string {
+	return buildLinksSection(issue)
+}
+
 // deserializeIssue parses frontmatter + body markdown into an Issue.
 func deserializeIssue(content string) (*model.Issue, error) {
 	yamlStr, bodyStart, found := vlt.ExtractFrontmatter(content)

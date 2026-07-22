@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/paivot-ai/nd/internal/model"
 	"github.com/paivot-ai/nd/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,8 @@ func addFilterFlags(cmd *cobra.Command) {
 	cmd.Flags().StringP("assignee", "a", "", "filter by assignee")
 	cmd.Flags().StringP("label", "l", "", "filter by label")
 	cmd.Flags().StringP("priority", "p", "", "filter by priority (0-4 or P0-P4)")
-	cmd.Flags().String("parent", "", "filter by parent issue ID")
+	cmd.Flags().String("parent", "", "filter by parent issue ID (direct children only)")
+	cmd.Flags().String("epic", "", "scope to an epic's whole subtree (recursive, unlike --parent)")
 	cmd.Flags().Bool("no-parent", false, "show only issues with no parent")
 	cmd.Flags().String("created-after", "", "filter by created date (YYYY-MM-DD)")
 	cmd.Flags().String("created-before", "", "filter by created date (YYYY-MM-DD)")
@@ -81,6 +83,67 @@ func buildFilterOptions(cmd *cobra.Command, defaultStatus string) (store.FilterO
 		Reverse:       reverse,
 		Limit:         limit,
 	}, nil
+}
+
+// applyEpicScope filters issues down to the subtree of the epic named by the
+// --epic flag (the epic itself plus all transitive children). Unlike --parent
+// it is recursive, so nested epics and milestone trees scope correctly. A
+// no-op when the flag is unset.
+func applyEpicScope(cmd *cobra.Command, s *store.Store, issues []*model.Issue) ([]*model.Issue, error) {
+	epicID, _ := cmd.Flags().GetString("epic")
+	if epicID == "" {
+		return issues, nil
+	}
+
+	all, err := s.ListIssues(store.FilterOptions{Status: "all"})
+	if err != nil {
+		return nil, err
+	}
+
+	scope := epicSubtree(all, epicID)
+	if scope == nil {
+		return nil, fmt.Errorf("epic %s not found", epicID)
+	}
+
+	var out []*model.Issue
+	for _, issue := range issues {
+		if scope[issue.ID] {
+			out = append(out, issue)
+		}
+	}
+	return out, nil
+}
+
+// epicSubtree returns the ID set of an epic and all transitive descendants,
+// or nil when the root does not exist. Cycle-safe.
+func epicSubtree(all []*model.Issue, rootID string) map[string]bool {
+	children := make(map[string][]string)
+	exists := false
+	for _, issue := range all {
+		if issue.ID == rootID {
+			exists = true
+		}
+		if issue.Parent != "" {
+			children[issue.Parent] = append(children[issue.Parent], issue.ID)
+		}
+	}
+	if !exists {
+		return nil
+	}
+
+	scope := map[string]bool{rootID: true}
+	queue := []string{rootID}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, child := range children[cur] {
+			if !scope[child] {
+				scope[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+	return scope
 }
 
 // parseDate parses a YYYY-MM-DD string into a time.Time.

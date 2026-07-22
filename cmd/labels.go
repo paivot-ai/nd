@@ -97,7 +97,7 @@ var labelsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all labels across issues",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

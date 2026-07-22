@@ -17,7 +17,7 @@ var graphCmd = &cobra.Command{
 	Long:  "Without id: shows all root issues (no blockers). With id: shows the subgraph reachable from that issue.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}

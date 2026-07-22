@@ -22,7 +22,7 @@ var countCmd = &cobra.Command{
 			status = "!closed"
 		}
 
-		s, err := store.Open(resolveVaultDir())
+		s, err := store.OpenRead(resolveVaultDir())
 		if err != nil {
 			return err
 		}
