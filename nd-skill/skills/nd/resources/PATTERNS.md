@@ -123,26 +123,48 @@ nd show PROJ-b7c
 
 ## Pattern: Using nd with Git Workflow
 
-Issues are files -- they live in your git repo:
+The backlog does NOT live on code branches. There is one live vault per clone
+(shared across all branches and worktrees), and nd persists it on a dedicated
+backlog branch (`nd/backlog` by default). Never `git add .vault/issues/`.
 
 ```bash
-# Create branch for a feature
+# Create branch for a feature -- the backlog is unaffected by branch switches
 git checkout -b feature/auth
 
-# Work with nd as usual
+# Work with nd as usual; every mutation auto-snapshots to nd/backlog
 nd create "Auth feature" --type=feature --priority=1
-nd update PROJ-a3f --status=in_progress
+nd claim PROJ-a3f
 # ... implement ...
 nd close PROJ-a3f --reason="Done"
 
-# Commit everything (code + issues)
-git add .vault/issues/
+# Commit code only
 git add src/
 git commit -m "feat: implement auth system"
 git push
+
+# Sync the backlog branch with the remote (pull + merge + push)
+nd sync
 ```
 
-Issue changes show up in PRs alongside code changes. Reviewers can see what work was tracked.
+Why: code branches carrying issue files give every branch its own diverging
+backlog copy. The dedicated branch keeps one canonical backlog regardless of
+how many agents and branches run in parallel, and `nd sync --restore` rebuilds
+a wiped vault from it.
+
+## Pattern: Multi-Agent Claiming
+
+When several agents pick work concurrently, `nd ready` followed by
+`nd update --status=in_progress` races: both agents can see the same story.
+`nd claim` is atomic under the vault lock:
+
+```bash
+export ND_AGENT=dev-worktree-3        # or pass --agent
+ID=$(nd ready --json | jq -r '.[0].ID')
+nd claim $ID                          # fails cleanly if another agent won
+nd release $ID                        # give it back if you cannot finish
+```
+
+A claim held by a dead agent can be taken over with `nd claim $ID --force`.
 
 ## Anti-Patterns
 

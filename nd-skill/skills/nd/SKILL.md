@@ -5,7 +5,7 @@ description: >
   Use for multi-session work, dependency tracking, and persistent context that
   survives conversation compaction. No database server. No size limits. Git-native.
 allowed-tools: "Read,Bash(nd:*)"
-version: "0.10.17"
+version: "0.11.0"
 author: "Ramiro Salas <https://github.com/RamXX>"
 license: "Apache-2.0"
 ---
@@ -64,12 +64,12 @@ Essential commands: `nd ready`, `nd create`, `nd show`, `nd update`, `nd close`,
 
 ## Session Protocol
 
-1. `nd ready` -- Find unblocked work
+1. `nd ready` -- Find unblocked work (`nd ready --epic <id>` scopes to an epic's subtree)
 2. `nd show <id>` -- Get full context
-3. `nd start <id>` -- Claim work (alias for `nd update <id> --status=in_progress`)
+3. `nd claim <id>` -- Claim work atomically (race-free when multiple agents run; `nd start` remains as a non-atomic alias)
 4. Work. Add notes as you go: `nd update <id> --append-notes "..."`
 5. `nd close <id> --reason="..."` -- Complete task (auto-unblocks dependents)
-6. `git push` -- Sync to remote (issues are files in git)
+6. `nd sync` -- Sync the backlog branch with the remote (issues live on the `nd/backlog` branch, never on code branches; local snapshots happen automatically after every mutation)
 
 ## Storage
 
@@ -93,6 +93,8 @@ For the full storage format specification, see [STORAGE.md](resources/STORAGE.md
 | Statistics | `nd stats`, `nd count` | [CLI_REFERENCE.md](resources/CLI_REFERENCE.md) |
 | Aliases | `nd start`, `nd block`, `nd resolve`, `nd unblock` | [CLI_REFERENCE.md](resources/CLI_REFERENCE.md) |
 | Search | `nd search "query"` | -- |
+| Git sync | `nd sync [--status|--restore|--no-push]` | [CLI_REFERENCE.md](resources/CLI_REFERENCE.md) |
+| Claiming | `nd claim <id>`, `nd release <id>` | [PATTERNS.md](resources/PATTERNS.md) |
 | Health | `nd doctor [--fix]` | [TROUBLESHOOTING.md](resources/TROUBLESHOOTING.md) |
 | AI context | `nd prime [--json]` | -- |
 | Import | `nd migrate --from-beads` | [CLI_REFERENCE.md](resources/CLI_REFERENCE.md) |

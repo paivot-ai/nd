@@ -213,7 +213,8 @@ nd list --status=review                           # Filter by custom status
 # Ready work (no blockers, not closed/deferred)
 # nd ready supports ALL the same filter flags as nd list.
 nd ready                                          # All ready issues
-nd ready --parent=PROJ-a1b2                       # Ready issues in a specific epic
+nd ready --parent=PROJ-a1b2                       # Direct children of an epic
+nd ready --epic=PROJ-a1b2                         # Whole epic subtree (recursive; use for nested epics)
 nd ready --assignee=alice                         # Filter by assignee
 nd ready --label=auth                             # Filter by label
 nd ready --priority=0                             # Filter by priority
@@ -230,6 +231,58 @@ nd blocked --verbose                              # Include blocker details
 nd stale                                          # Default: 30 days
 nd stale --days=14                                # Custom threshold
 ```
+
+## Upgrading nd
+
+```bash
+nd upgrade            # Update the nd binary and refresh agent skills in one command
+nd upgrade --check    # Report installed vs latest version, change nothing
+```
+
+Named `upgrade` because `nd update` mutates issues. Replaces the binary from
+the latest GitHub release (checksum-verified), then refreshes the nd plugin in
+Claude Code and Codex via their plugin managers.
+
+## Claiming Work (Multi-Agent Safe)
+
+```bash
+# Atomic claim: sets assignee + in_progress under the vault lock.
+# Fails if another agent already claimed the issue or it has open blockers.
+nd claim PROJ-a3f                                 # Agent name from ND_AGENT env, then OS user
+nd claim PROJ-a3f --agent=dev-2                   # Explicit agent name
+nd claim PROJ-a3f --force                         # Steal a claim / ignore blockers
+
+# Release a claim (assignee cleared, status back to open)
+nd release PROJ-a3f
+nd release PROJ-a3f --force                       # Release another agent's claim
+```
+
+Use `nd claim` instead of `nd update --status=in_progress` whenever more than
+one agent picks work from the same backlog: the read-check-write is atomic, so
+two agents cannot both win the same issue.
+
+## Git Sync
+
+The backlog lives on a dedicated branch (default `nd/backlog`), never on code
+branches. Every successful mutating command auto-snapshots the vault to that
+branch locally (disable with `nd config set sync.auto off` or ND_SYNC_AUTO=off).
+
+```bash
+nd sync                                           # Snapshot + fetch/merge + push
+nd sync --no-push                                 # Snapshot + fetch/merge only
+nd sync --status                                  # Show position (ahead/behind/dirty); changes nothing
+nd sync --restore                                 # Rebuild a wiped or freshly cloned vault from the branch
+nd sync --force                                   # Bypass the mass-delete safety guard
+```
+
+Divergent clones merge field-by-field per issue: one-side changes always
+survive; both-side scalar conflicts resolve to the latest `updated_at`;
+dependency, label, and relation lists merge as sets (removals honored, adds
+unioned); History and Comments merge as append-only unions; true Description
+conflicts keep the newer side and record the resolution in History.
+
+Recovery: if `.vault/` is ever wiped (e.g. `git clean -fdx`), `nd sync --restore`
+rebuilds it from the branch. At most the single most recent command is lost.
 
 ## Dependencies
 
@@ -408,6 +461,10 @@ nd config set status.custom "review,qa"           # Set custom statuses
 | `status.sequence` | Ordered pipeline for FSM | `open,in_progress,review,qa,closed` |
 | `status.fsm` | Enable/disable FSM enforcement | `true` / `false` |
 | `status.exit_rules` | Restrict exits from statuses | `blocked:open,in_progress` |
+| `sync.branch` | Backlog branch for `nd sync` | `nd/backlog` (default) |
+| `sync.remote` | Remote for `nd sync` | `origin` (default) |
+| `sync.auto` | Auto-snapshot after mutations | `on` (default) / `off` |
+| `track_issues` | Legacy: track issues on code branches | `false` (default) |
 
 ### Custom Statuses
 

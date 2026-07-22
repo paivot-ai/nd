@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/paivot-ai/nd)](https://goreportcard.com/report/github.com/paivot-ai/nd)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**nd** (short for `node` as node in a graph) is a Git-native issue tracker that stores issues as Obsidian-compatible markdown files with YAML frontmatter. No database server. No field size limits. Plain files you can read, grep, and version with git.
+**nd** (short for `node` as node in a graph) is a Git-native issue tracker that stores issues as Obsidian-compatible markdown files with YAML frontmatter. No database server. No field size limits. Plain files you can read, grep, and version with git. The backlog lives on a dedicated git branch (never on code branches), so any number of agents, branches, and worktrees share one canonical backlog, and a wiped vault is always recoverable.
 
 <p align="center">
   <img src="graph.png" alt="Graph view of a backlog managed with nd" width="835">
@@ -21,6 +21,32 @@ We built [beads](https://github.com/steveyegge/beads) (`bd`) into the backbone o
 - **Not inspectable.** Issues live in a binary database. You can't `cat` an issue, `grep` across your backlog, or diff changes in a PR review.
 
 `nd` solves all of this by storing issues as plain markdown files in a directory. The storage layer is [vlt](https://github.com/paivot-ai/vlt), an Obsidian-compliant vault management library, used as an importable Go library. vlt handles file I/O, frontmatter parsing, search, file locking, and content patching. `nd` adds issue-tracker semantics on top.
+
+## How nd Uses Git
+
+Three design decisions make nd safe under any level of agent parallelism:
+
+1. **One live vault per clone.** The backlog is a single physical directory
+   (`.vault/`, or a shared git-common-dir vault in worktree-heavy setups),
+   resolved identically from every branch and worktree. Switching branches
+   never changes what the backlog says. Concurrency inside a clone is handled
+   by an advisory file lock: writers exclusive, readers shared and concurrent.
+2. **The backlog persists on a dedicated branch, never on code branches.**
+   Every successful mutating command auto-snapshots the vault to `nd/backlog`
+   (git plumbing only; your working tree, index, and HEAD are untouched), so
+   the branch is a continuous journal: `git clean -fdx` or a deleted checkout
+   loses at most one command, and `nd sync --restore` rebuilds the vault.
+   `nd sync` reconciles clones through a field-aware, three-way issue merge
+   and pushes. Committing issue files to code branches (the classic approach)
+   gives every branch a diverging backlog copy; nd deliberately does not do
+   that. Full architecture: [docs/SYNC.md](docs/SYNC.md).
+3. **Work claiming is atomic.** `nd claim` sets the assignee and moves an
+   issue to in_progress in one locked operation, so concurrent agents cannot
+   pick the same story. `nd ready --epic <id>` scopes ready work to a whole
+   epic subtree, which is what lets several epics run in flight at once.
+
+Keep the binary and the agent skills in lockstep with `nd upgrade`, which
+updates both in one command ([docs/UPGRADING.md](docs/UPGRADING.md)).
 
 ## nd vs beads
 
@@ -40,6 +66,9 @@ We built [beads](https://github.com/steveyegge/beads) (`bd`) into the backbone o
 | Content integrity | None | SHA-256 content hashing |
 | Import from beads | N/A | `nd import --from-beads` preserves IDs, timestamps, and infers execution trajectories |
 | DAG visualization | None | `nd graph` terminal DAG, `nd path` execution chains |
+| Git sync | Dolt commits | Dedicated backlog branch, auto-snapshots, field-aware three-way merge, `nd sync --restore` recovery |
+| Multi-agent claiming | None | `nd claim`/`nd release`, atomic under the vault lock |
+| Self-update | None | `nd upgrade` updates binary + agent skills in one command |
 
 Both tools use the same ID format (`PREFIX-HASH`, 4 base36 chars from SHA-256) for interoperability.
 
@@ -93,6 +122,19 @@ make install    # Installs to ~/go/bin/nd and the Claude Code plugin
 
 Requires Go 1.26+.
 
+### Upgrading
+
+```bash
+nd upgrade            # Update the binary and refresh agent skills in one command
+nd upgrade --check    # Report installed vs latest, change nothing
+```
+
+Downloads the release, verifies its SHA-256 checksum, atomically replaces the
+binary, then refreshes the nd plugin in every detected agent host (Claude
+Code, Codex) through its own plugin manager. See
+[docs/UPGRADING.md](docs/UPGRADING.md) for flags and the compatibility notes
+for existing vaults.
+
 ## Quick Start
 
 ```bash
@@ -107,8 +149,8 @@ nd create "Fix login crash" --type=bug --priority=0 -d "App crashes on special c
 nd ready                    # Show actionable issues (no blockers)
 nd list --status=open       # All open issues
 
-# Work on something
-nd update PROJ-a3f8 --status=in_progress
+# Work on something (claim is atomic -- safe with concurrent agents)
+nd claim PROJ-a3f8
 nd comments add PROJ-a3f8 "Root cause found: missing input sanitization"
 
 # Manage dependencies
@@ -118,6 +160,9 @@ nd blocked                         # See what's stuck
 # Complete work
 nd close PROJ-a3f8 --reason="Fixed with input validation"
 nd ready                           # PROJ-b7c2 is now unblocked
+
+# Persist the backlog to the remote (local snapshots are automatic)
+nd sync
 ```
 
 ## Custom Statuses
@@ -314,7 +359,7 @@ Spike complete. Chose Authorization Code flow over Implicit.
 Started implementation. Base models done.
 ```
 
-Every issue is a file you can read with `cat`, search with `grep`, and edit with any text editor. In tracked mode you can also diff issue changes with `git diff`. In the default local mode, use `nd archive` when you want a git-committable snapshot. No database required.
+Every issue is a file you can read with `cat`, search with `grep`, and edit with any text editor. Durability and cross-clone sync come from the dedicated backlog branch (`nd sync`); `nd archive` remains available for point-in-time exports. No database required.
 
 ### Vault Layout
 
@@ -363,6 +408,9 @@ status_custom: "review,qa,rejected"
 status_sequence: "open,in_progress,review,qa,closed"
 status_fsm: true
 status_exit_rules: "blocked:open,in_progress;rejected:in_progress"
+sync_branch: nd/backlog
+sync_remote: origin
+sync_auto: "on"
 ```
 
 Manage it via `nd config set/get/list` or edit directly.
@@ -379,7 +427,7 @@ Creates the resolved vault directory structure and `.nd.yaml` config. Prefix is 
 
 If you do not pass `--vault`, `nd init` uses the same vault resolution rules described above. In a repo with `.vault/.nd-shared.yaml`, that means initialization happens in the shared git-common-dir vault, not in a branch-local `.vault/`.
 
-By default, `nd` ignores live issue files and `.nd.yaml`, which keeps the mutable tracker local and makes `nd archive` the git-friendly export path. Use `--track-issues` to keep `.nd.yaml` and `issues/` in git for repos that want markdown issues to be the tracked system of record.
+By default, `nd` keeps live issue files and `.nd.yaml` off code branches and persists them on the dedicated backlog branch instead (see Git Sync): code branches stay clean, parallel agents on different branches and worktrees share one canonical backlog, and `nd sync --restore` recovers a wiped vault. Use `--track-issues` only for single-agent repos that want issue files committed on code branches; switching later is supported via `nd config set track_issues true|false`.
 
 ### Configuration
 
@@ -556,7 +604,8 @@ nd stale [--days=N]
 
 ```bash
 nd ready                                    # All ready issues
-nd ready --parent=PROJ-a1b2                 # Ready issues in a specific epic
+nd ready --parent=PROJ-a1b2                 # Direct children of an epic
+nd ready --epic=PROJ-a1b2                   # Whole epic subtree (recursive)
 nd ready --label=auth --assignee=alice      # Ready auth issues assigned to alice
 nd ready --priority=0                       # Ready critical issues
 nd ready --type=bug                         # Ready bugs
@@ -565,7 +614,51 @@ nd ready --created-after=2026-01-01         # Ready issues created this year
 nd ready --sort=created --reverse -n 5      # 5 most recently created ready issues
 ```
 
-`blocked` shows issues waiting on dependencies. `stale` shows issues not updated in N days (default: 14).
+`blocked` shows issues waiting on dependencies. `stale` shows issues not updated in N days (default: 30).
+
+### Claiming Work (Multi-Agent Safe)
+
+```bash
+nd claim <id> [--agent=NAME] [--force]
+nd release <id> [--agent=NAME] [--force]
+```
+
+`claim` sets the assignee and moves the issue to in_progress in one atomic
+operation under the vault lock. When multiple agents pick work concurrently,
+`nd ready` followed by `nd update --status=in_progress` races (both agents can
+select the same story); `nd claim` cannot. A claim held by another agent
+fails cleanly, an issue with open blockers is refused, and `--force` steals a
+claim from a dead agent. The agent name comes from `--agent`, then `ND_AGENT`,
+then the OS user. `release` clears the assignee and returns the issue to open.
+
+### Git Sync
+
+```bash
+nd sync                   # Snapshot + fetch/merge + push the backlog branch
+nd sync --status          # Show sync position, change nothing
+nd sync --restore         # Rebuild a wiped or freshly cloned vault
+nd sync --no-push         # Reconcile without pushing
+nd sync --force           # Bypass the mass-delete safety guard
+```
+
+The backlog never lives on code branches. Every clone has one live vault
+(shared across all branches and worktrees), and nd persists it on a dedicated
+backlog branch (default `nd/backlog`) using git plumbing -- the working tree,
+index, and HEAD are never touched. Every successful mutating command
+auto-snapshots the vault to that branch locally, so the branch is a continuous
+journal: `git clean -fdx` or a deleted checkout loses at most one command, and
+`nd sync --restore` rebuilds the vault from the branch (fetching from the
+remote when needed).
+
+Divergent clones are merged field-by-field per issue: one-side changes always
+survive; both-side scalar conflicts resolve to the latest `updated_at`;
+dependency, label, and relation lists merge as sets (removals honored, adds
+unioned); History and Comments merge as append-only unions; true Description
+conflicts keep the newer side and record the resolution in the issue History.
+
+Configuration: `sync.branch` (default `nd/backlog`), `sync.remote` (default
+`origin`), `sync.auto` (`on`/`off`, default `on`; also `ND_SYNC_AUTO=off`).
+See [docs/SYNC.md](docs/SYNC.md) for the full architecture.
 
 ### Search
 
@@ -742,8 +835,10 @@ nd (Go CLI, cobra)
   internal/
     model/           -- Issue struct, Status/Priority/Type enums, validation
     idgen/           -- SHA-256 + base36 collision-resistant ID generation
-    store/           -- Wraps vlt.Vault for issue CRUD, deps, filtering, FSM
+    store/           -- Wraps vlt.Vault for issue CRUD, deps, filtering, FSM, claims
     graph/           -- In-memory dependency graph: ready, blocked, cycles, epics, DAG, execution paths
+    gitsync/         -- Backlog branch persistence: snapshot, restore, field-aware three-way merge, sync
+    selfupdate/      -- nd upgrade: checksum-verified binary replacement + agent skill refresh
     enforce/         -- Content hashing, validation rules
     format/          -- Table, detail, JSON, prime context output
     ui/              -- Terminal styling (Ayu theme), markdown rendering, TTY detection
@@ -760,6 +855,15 @@ make build    # Build binary
 ```
 
 Unit tests cover model validation, ID generation, content hashing, graph traversal (dependency trees and execution paths), config round-tripping, and FSM transition enforcement (forward steps, backward rework, exit rules, sequence skipping). Integration tests create real temp vaults and run full workflows with no mocks: init, create, dep, ready, close, follows/led_to linking, history logging, auto-follows detection, custom status transitions, and FSM enforcement.
+
+## Documentation
+
+| Document | Content |
+|----------|---------|
+| [docs/SYNC.md](docs/SYNC.md) | Git sync architecture: the backlog branch, auto-snapshots, merge semantics, safety guards, concurrency model |
+| [docs/UPGRADING.md](docs/UPGRADING.md) | `nd upgrade` usage and compatibility notes for existing vaults (what changes, what does not, team rollout) |
+| [docs/BACKENDS.md](docs/BACKENDS.md) | Pluggable system-of-record design (Jira, Linear, Tixx): local-first sync adapters, field ownership, knowledge stores |
+| [nd-skill/skills/nd/](nd-skill/skills/nd/) | The Claude Code skill: agent-facing CLI reference, workflows, patterns, troubleshooting |
 
 ## License
 

@@ -70,7 +70,9 @@ Session End:
 - [ ] Update notes with current state:
       nd update <id> --append-notes "COMPLETED: X. IN PROGRESS: Y. NEXT: Z"
 - [ ] Ensure all code changes are committed and pushed
-- [ ] nd issues are already on disk -- they go with git push
+- [ ] nd sync -- persist the backlog branch to the remote (issue files are
+      NOT on code branches; auto-snapshots cover local durability, nd sync
+      covers the remote)
 ```
 
 ### At Session Start (resuming)
