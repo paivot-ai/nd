@@ -135,3 +135,13 @@ are excluded. Knowledge notes stored in the vault are included.
 
 Switching modes with `nd config set track_issues true|false` reconciles the
 vault `.gitignore` in place.
+
+## Local-only operations
+
+`nd sync --local` snapshots without remote discovery, fetch, merge, or push.
+`nd sync --status --local` compares the vault with the local branch only; JSON
+sets `RemoteUnchecked: true` and omits remote-presence and ahead/behind fields.
+`nd sync --restore --local` never fetches a missing branch. These operations
+leave persistent remote configuration unchanged; plain sync retains its remote
+behavior. This separates local persistence from authorized cross-host transfer,
+not host-level policy enforcement or offsite durability.

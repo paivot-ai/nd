@@ -1,12 +1,14 @@
 package gitsync
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 // SyncOptions controls a Sync run.
 type SyncOptions struct {
+	Local   bool   // do not discover or contact the remote
 	Remote  string // remote name; empty uses DefaultRemote
 	Branch  string // backlog branch; empty uses DefaultBranch
 	NoPush  bool   // skip pushing even when a remote exists
@@ -16,6 +18,7 @@ type SyncOptions struct {
 
 // SyncResult describes what a Sync run did.
 type SyncResult struct {
+	LocalOnly    bool `json:",omitempty"`
 	Branch       string
 	Remote       string
 	Snapshotted  bool     // a new local snapshot commit was created
@@ -51,6 +54,10 @@ func Sync(vaultDir string, opts SyncOptions) (*SyncResult, error) {
 	}
 	res.Snapshotted = snap.Created
 	res.Commit = snap.Commit
+	if opts.Local {
+		res.LocalOnly = true
+		return res, nil
+	}
 
 	r, err := DiscoverRepo(vaultDir)
 	if err != nil {
@@ -186,7 +193,7 @@ func Restore(vaultDir string, opts SyncOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if tip == "" && r.HasRemote(opts.Remote) {
+	if tip == "" && !opts.Local && r.HasRemote(opts.Remote) {
 		remoteTip, ferr := r.fetchBranch(opts.Remote, opts.Branch)
 		if ferr != nil {
 			return "", ferr
@@ -197,6 +204,9 @@ func Restore(vaultDir string, opts SyncOptions) (string, error) {
 			}
 			tip = remoteTip
 		}
+	}
+	if tip == "" && opts.Local {
+		return "", fmt.Errorf("no local backlog branch %q; nothing to restore", opts.Branch)
 	}
 	if tip == "" {
 		return "", fmt.Errorf("no backlog branch %q locally or on %q; nothing to restore", opts.Branch, opts.Remote)
@@ -209,13 +219,14 @@ func Restore(vaultDir string, opts SyncOptions) (string, error) {
 
 // Status reports the sync position of the vault without changing anything.
 type StatusResult struct {
-	Branch       string
-	BranchExists bool
-	Commit       string
-	Dirty        bool // vault tree differs from the branch tip
-	RemoteAbsent bool
-	Ahead        int // commits on local branch not on remote
-	Behind       int // commits on remote branch not on local
+	RemoteUnchecked bool `json:",omitempty"`
+	Branch          string
+	BranchExists    bool
+	Commit          string
+	Dirty           bool // vault tree differs from the branch tip
+	RemoteAbsent    bool
+	Ahead           int // commits on local branch not on remote
+	Behind          int // commits on remote branch not on local
 }
 
 // Status compares the vault, the local backlog branch, and the remote branch.
@@ -253,6 +264,11 @@ func Status(vaultDir string, opts SyncOptions) (*StatusResult, error) {
 			return nil, err
 		}
 		res.Dirty = tree != tipTree
+	}
+
+	if opts.Local {
+		res.RemoteUnchecked = true
+		return res, nil
 	}
 
 	if !r.HasRemote(opts.Remote) {
@@ -314,4 +330,18 @@ func short(hash string) string {
 		return hash[:8]
 	}
 	return hash
+}
+
+// MarshalJSON omits remote comparisons when the caller requested local-only status.
+func (s StatusResult) MarshalJSON() ([]byte, error) {
+	type status StatusResult
+	if !s.RemoteUnchecked {
+		return json.Marshal(status(s))
+	}
+	return json.Marshal(struct {
+		status
+		RemoteAbsent *bool `json:",omitempty"`
+		Ahead        *int  `json:",omitempty"`
+		Behind       *int  `json:",omitempty"`
+	}{status: status(s)})
 }

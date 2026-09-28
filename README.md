@@ -635,7 +635,9 @@ then the OS user. `release` clears the assignee and returns the issue to open.
 
 ```bash
 nd sync                   # Snapshot + fetch/merge + push the backlog branch
-nd sync --status          # Show sync position, change nothing
+nd sync --status          # Fetch and show sync position
+nd sync --local           # Snapshot without remote access
+nd sync --status --local  # Compare the vault with the local backlog branch
 nd sync --restore         # Rebuild a wiped or freshly cloned vault
 nd sync --no-push         # Reconcile without pushing
 nd sync --force           # Bypass the mass-delete safety guard
@@ -649,6 +651,14 @@ auto-snapshots the vault to that branch locally, so the branch is a continuous
 journal: `git clean -fdx` or a deleted checkout loses at most one command, and
 `nd sync --restore` rebuilds the vault from the branch (fetching from the
 remote when needed).
+
+Use `--local` for unattended persistence when cross-host synchronization requires
+explicit authorization. It does not discover or contact remotes, import changes,
+or push, and leaves remote configuration unchanged. Local JSON status sets
+`RemoteUnchecked: true` and omits `RemoteAbsent`, `Ahead`, and `Behind`.
+`nd sync --restore --local` restores only from the local branch and fails if that
+branch is absent. Plain `nd sync` still performs explicit remote synchronization.
+A local snapshot does not protect against loss of the repository or disk.
 
 Divergent clones are merged field-by-field per issue: one-side changes always
 survive; both-side scalar conflicts resolve to the latest `updated_at`;

@@ -31,10 +31,13 @@ are merged field-by-field per issue (status by latest update, dependency and
 label lists as set unions, history and comments as append unions).
 
   nd sync             snapshot, pull/merge, push
+  nd sync --local     snapshot without remote access
+  nd sync --status --local  compare only the vault and local branch
   nd sync --no-push   snapshot and pull/merge only
   nd sync --status    show sync position, change nothing
   nd sync --restore   rebuild a wiped or freshly cloned vault from the branch`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		localOnly, _ := cmd.Flags().GetBool("local")
 		statusOnly, _ := cmd.Flags().GetBool("status")
 		restore, _ := cmd.Flags().GetBool("restore")
 		noPush, _ := cmd.Flags().GetBool("no-push")
@@ -43,7 +46,7 @@ label lists as set unions, history and comments as append unions).
 		dir := resolveVaultDir()
 
 		if restore {
-			return runRestore(dir)
+			return runRestore(dir, localOnly)
 		}
 
 		s, err := store.Open(dir)
@@ -53,6 +56,7 @@ label lists as set unions, history and comments as append unions).
 		defer s.Close()
 
 		opts := gitsync.SyncOptions{
+			Local:  localOnly,
 			Branch: s.SyncBranch(),
 			Remote: s.SyncRemote(),
 			NoPush: noPush,
@@ -83,14 +87,17 @@ label lists as set unions, history and comments as append unions).
 	},
 }
 
-func runRestore(dir string) error {
+func runRestore(dir string, localOnly bool) error {
 	// Restore intentionally does not require an initialized vault: its whole
 	// point is recovering one. Lock only when the directory already exists.
 	if _, err := os.Stat(dir); err == nil {
 		s, err := store.Open(dir)
 		if err == nil {
 			defer s.Close()
-			commit, rerr := gitsync.Restore(dir, gitsync.SyncOptions{Branch: s.SyncBranch(), Remote: s.SyncRemote()})
+			opts := gitsync.SyncOptions{
+				Local: localOnly, Branch: s.SyncBranch(), Remote: s.SyncRemote(),
+			}
+			commit, rerr := gitsync.Restore(dir, opts)
 			if rerr != nil {
 				return rerr
 			}
@@ -106,7 +113,7 @@ func runRestore(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	commit, err := gitsync.Restore(dir, gitsync.SyncOptions{})
+	commit, err := gitsync.Restore(dir, gitsync.SyncOptions{Local: localOnly})
 	if err != nil {
 		return err
 	}
@@ -127,6 +134,10 @@ func printSyncStatus(st *gitsync.StatusResult) {
 		fmt.Println("Vault:   has changes not yet snapshotted")
 	} else {
 		fmt.Println("Vault:   in sync with branch tip")
+	}
+	if st.RemoteUnchecked {
+		fmt.Println("Remote:  unchecked (local-only status)")
+		return
 	}
 	if st.RemoteAbsent {
 		fmt.Println("Remote:  none configured (local-only durability)")
@@ -155,7 +166,9 @@ func printSyncResult(res *gitsync.SyncResult) {
 		parts = append(parts, "up to date")
 	}
 	suffix := ""
-	if res.RemoteAbsent {
+	if res.LocalOnly {
+		suffix = " (local only; remote unchecked)"
+	} else if res.RemoteAbsent {
 		suffix = " (no remote; local branch only)"
 	}
 	fmt.Printf("Sync %s: %s (%s)%s\n", res.Branch, strings.Join(parts, ", "), res.Commit[:8], suffix)
@@ -204,6 +217,7 @@ func autoSnapshot(cmdPath string) {
 }
 
 func init() {
+	syncCmd.Flags().Bool("local", false, "use only the local backlog branch; never contact the remote")
 	syncCmd.Flags().Bool("status", false, "show sync status without changing anything")
 	syncCmd.Flags().Bool("restore", false, "materialize the backlog branch into the vault")
 	syncCmd.Flags().Bool("no-push", false, "do not push to the remote")
